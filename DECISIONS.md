@@ -64,3 +64,23 @@ One entry per real decision. Format:
   pandas/parquet. Pandas enters when we're operating on whole races at once,
   not at this function's level.
 
+## 2026-11-03 — Rain and safety cars: no modelling in v1, safety-car replay later
+
+- **Decision** — v1 does not model rain or safety cars. Once the backtest works
+  on clean races, add a clearly labelled extension that replays a race's real
+  safety car.
+- **Requirement** — Real races have safety cars and rain, and the project has to
+  be defensible about how it treats them.
+- **Options** — (a) No modelling, limitation stated. (b) (a) plus a later replay
+  of the real safety car: slow laps and a cheaper pit stop on the known laps.
+  (c) Model rain and random safety cars now: rainfall isn't track wetness, and
+  8-10 races can't support safety-car odds per circuit.
+- **Choice and reason** — (b). The real safety-car laps are known from
+  `race_control`, so a replay doesn't need an invented distribution. Building it
+  after a working backtest gives a baseline to measure it against. Safety-car
+  laps stay out of fitting either way, because they say nothing about tyres or
+  fuel.
+- **What would make us reconsider** — The replay doesn't reduce backtest error on
+  safety-car races: drop it. A dataset with far more races could reopen
+  safety-car odds.
+

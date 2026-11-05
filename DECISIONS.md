@@ -84,3 +84,38 @@ One entry per real decision. Format:
   safety-car races: drop it. A dataset with far more races could reopen
   safety-car odds.
 
+## 2026-11-04 — Laps with no matching stint are kept, with `None` values
+
+- **Decision** — `add_stint_data` keeps a lap with no matching stint and sets its
+  `tyre_age` and `compound` to `None`.
+- **Requirement** — Real races have unmatched laps: in Mexico 2024, driver 14's
+  lap 16 has no stint. The join has to handle them without hiding them or
+  inventing values.
+- **Options** — (a) Keep the lap with `None`: the row count stays the same, but
+  later code has to handle `None`. (b) Drop the lap in the join and return a count:
+  later code is simpler, but the join also becomes cleaning. (c) Raise an error:
+  very visible, but real data stops it straight away. I also considered assuming
+  the driver was in the pit lane when a later stint exists, but no unmatched lap
+  in Mexico has one, and it would add a fact the data doesn't show.
+- **Choice and reason** — (a). The join stays a join, and every exclusion can be
+  made and counted in one place during cleaning.
+- **What would make us reconsider** — Unmatched laps turn up mid-race in other
+  races, which would need an explanation rather than just `None`. Or handling
+  `None` becomes repetitive once we move to the processed dataset.
+
+## 2026-11-04 — Overlapping stints raise `ValueError`
+
+- **Decision** — `find_stint` raises `ValueError`, naming the driver and lap, when
+  more than one of a driver's stints covers the same lap.
+- **Requirement** — A car has one set of tyres on a lap, so a lap needs a single
+  tyre age and compound. An overlap means the data breaks that assumption.
+- **Options** — (a) Raise `ValueError`: visible straight away, but one bad row
+  stops the whole race. (b) Return the first match: never stops, but can pass a
+  wrong age into the model unnoticed. (c) Use `None`: the run continues, but a data
+  error looks the same as a retirement lap.
+- **Choice and reason** — (a). We shouldn't guess when a basic assumption fails.
+  This is different from an unmatched lap, which is expected in real races.
+- **What would make us reconsider** — Overlaps turn out to be common and have a
+  known cause when we run more races. Then we'd handle that cause with its own
+  rule. Mexico 2024 has none, and no other race has been checked yet.
+

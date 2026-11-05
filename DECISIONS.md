@@ -119,3 +119,62 @@ One entry per real decision. Format:
   known cause when we run more races. Then we'd handle that cause with its own
   rule. Mexico 2024 has none, and no other race has been checked yet.
 
+
+## 2026-11-05 — Races with a safety car stay in; disrupted laps are dropped
+
+- **Decision** — A dry race with a safety car (SC), virtual safety car (VSC) or
+  red flag can still be used. Its disrupted laps are dropped during cleaning,
+  with a count per race. Only fully undisrupted sessions are used for the
+  simulator backtest.
+- **Requirement** — CLAUDE.md asks for 4-5 Grands Prix in both 2024 and 2025,
+  with a range of tyre wear across circuits. Only 3 of the 17 non-sprint
+  candidates are clean in both years (Hungaroring, Monza, Singapore), and all
+  three are mostly one- or two-stop races.
+- **Options** — (a) Only races clean in both years: no lap dropping, but 3 races
+  with similar wear. (b) Any dry race, drop SC/VSC/red-flag laps, backtest on
+  clean sessions only. (c) Treat a VSC as clean: more races, but VSC laps are
+  slow and pit stops under a VSC are cheaper, so both the model and the backtest
+  get noisier.
+- **Choice and reason** — (b). The model treats each lap as its own row, so a
+  gap in the lap sequence doesn't hurt it, as long as tyre age and race lap are
+  computed from the real lap numbers before anything is dropped. Keeping the
+  laps would hurt: in Mexico 2024 the lap 1-6 safety car made the youngest tyres
+  look 20+ seconds slow, while clean Hungary 2024 is flat at about 84.1-84.6s
+  from age 1 to 17. Accepted cost: tyre age and race lap keep counting during a
+  safety car while the tyres barely wear and less fuel is burned, so ages after
+  a safety car overstate wear slightly. That goes in the limitations. The laps
+  around an SC (deployment and restart) also need to be in the exclusion rule.
+- **What would make us reconsider** — Residuals that are consistently off on
+  laps after a safety car (then try a "racing laps on this set" feature in
+  Week 5), or one race losing so many laps that its wear estimate is unreliable.
+
+## 2026-11-05 — v1 races and how they are split
+
+- **Decision** — v1 uses 5 Grands Prix in both 2024 and 2025: Hungary
+  (Hungaroring), Italy (Monza), Singapore, Bahrain (Sakhir) and Abu Dhabi (Yas
+  Marina).
+  - Training: the 2024 races (9566, 9590, 9606, 9472, 9662).
+  - Test: the 2025 races (9928, 9912, 9896, 10014, 9839), not looked at until
+    the model is chosen.
+  - Model selection: leave one 2024 race out at a time.
+  - Backtest: sessions with no SC, VSC or red flag. Held out: Hungary, Monza,
+    Singapore, Abu Dhabi 2025. In-sample, reported separately: Hungary, Monza,
+    Singapore, Bahrain 2024.
+- **Requirement** — 4-5 dry, non-sprint Grands Prix with usable data in both
+  years (CLAUDE.md), a range of tyre wear across circuits (rule 3), and enough
+  undisrupted sessions for the backtest (rule 8).
+- **Options** — (a) These 5. (b) Suzuka instead of Yas Marina: high wear in 2024
+  (mostly 3 stops) but almost all 1-stop in 2025, so a harder test that may
+  reflect a circuit change we can't model. (c) Las Vegas instead of Yas Marina:
+  2024 clean, but 2025 VSCs on laps 2-4 and 16. Zandvoort, Imola, Monaco and the
+  rain races were ruled out for heavy disruption, track-position races or rain
+  (see `docs/DATA_AUDIT.md`).
+- **Choice and reason** — (a). Sakhir adds the only high-wear circuit with
+  little disruption (2-3 stops both years, one 4-lap SC in 2025). Yas Marina
+  costs 2 VSC laps and behaves similarly in both years. That gives 8
+  undisrupted sessions for the backtest.
+- **What would make us reconsider** — The lap/stint check fails on one of these
+  sessions, Singapore 2025's rain readings turn out to be during the race, or
+  Sakhir 2024's missing MEDIUM stints turn out to be a data problem. Suzuka
+  2025 and Zandvoort 2024 (both undisrupted) stay available as an optional
+  unseen-circuit test.

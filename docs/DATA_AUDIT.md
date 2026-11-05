@@ -176,3 +176,46 @@ Clean sessions: 12 of 34 (7 in 2024, 5 in 2025).
 - [x] Which candidates were dry
 - [x] `/laps` and `/stints` for one chosen race
 - [ ] Exact form of the lapped-driver value in `interval`
+
+## Hungary 2024
+
+### Laps
+- 1,356 laps in and out
+
+### Stints
+- No overlapping stints.
+- Unmatched lap (driver 10, lap 34) retired on that lap so there's no lap duration for him.
+
+### Tyre ages
+- Age 0 is mostly pit-out laps, and the other bit is race start, so they're much slower than the average pace for the race. 15 lap 1s, and 32 pit-outs.
+- Age 1 normal laps average 84.32s, same as later ages. There are 2 lap 1s, and 8 pit-out laps, which are pushing the average higher. 48 normal laps.
+- Thus, we will exclude lap 1 and pit-out laps by lap type.
+
+
+## Stints across shortlisted races
+
+`/stints?session_key=<key>` for both years of 12 dry candidates (22 new files,
+`data/raw/stints_<session_key>.json`, retrieved 2026-11-05). Pit stops per
+driver = stints - 1, so "0 stops" includes drivers who retired before stopping.
+Disrupted laps are from `race_control` (deployed lap to ending lap).
+
+| Circuit | 2024 stops (drivers) | 2025 stops (drivers) | 2024 disruptions | 2025 disruptions |
+|---|---|---|---|---|
+| Hungaroring | 1:2, 2:16, 3:2 | 1:11, 2:9 | none | none |
+| Monza | 0:1, 1:9, 2:9, 3:1 | 0:1, 1:19 | none | none |
+| Singapore | 1:18, 2:1, 3:1 | 1:17, 2:3 | none | none (rain readings pre-race only) |
+| Sakhir | 2:17, 3:3 | 2:18, 3:2 | none | SC laps 32-35 |
+| Yas Marina | 0:1, 1:13, 2:4, 3:1, 4:1 | 1:13, 2:7 | VSC laps 2-3 | none |
+| Suzuka | 0:2, 2:2, 3:14, 4:2 | 1:19, 2:1 | red flag lap 1 | none |
+| Las Vegas | 1:3, 2:15, 3:2 | 0:1, 1:15, 2:3, 3:1 | none | VSC laps 2-4, 16 |
+| Zandvoort | 1:14, 2:6 | 0:1, 1:3, 2:12, 3:3, 4:1 | none | SC 23-26, VSC 31-32, SC 53-57, SC 65-68 |
+| Baku | 1:18, 2:2 | 0:1, 1:17, 2:2 | VSC lap 51 (last lap) | SC laps 1-4 |
+| Mexico City | 0:3, 1:14, 2:2, 3:1 | 0:1, 1:12, 2:6, 3:1 | SC laps 1-6 | VSC laps 70-71 |
+| Jeddah | 0:2, 1:17, 2:1 | 0:2, 1:17, 2:1 | SC laps 7-9 | SC laps 1-3 |
+| Imola | 1:16, 2:2, 3:1, 4:1 | 1:4, 2:15, 3:1 | none | VSC 29-31, SC 46-53 |
+
+Not used: Monte Carlo (2024 red flag on lap 1, processional race), rain races
+(Silverstone, Montreal 2024, Melbourne 2025), and Catalunya 2024 / Montreal
+2025 until their single rain reading is checked.
+
+To check: Sakhir 2024 stints show only SOFT and HARD, no MEDIUM.

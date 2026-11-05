@@ -61,3 +61,24 @@ Session 2: decide whether a virtual safety car counts as not clean, and choose
 
 Still unclear: How to separate tyre age from fuel; whether the late rise is real
 or in-laps; why driver 14's stint stops at lap 15 when they have a lap 16.
+
+## 2026-11-05 Session 4
+
+Done: Made `pitwall` installable (build-system in pyproject, so no more
+`PYTHONPATH`), generalised the join check into `scripts/check_session_join.py
+<session_key>` and ran it on Hungary 2024: 1,356 laps in and out, no overlaps,
+one unmatched lap (driver 10's last lap, same pattern as Mexico). Lap 1 and
+pit-out laps can land at any tyre age because of used sets, so they have to be
+excluded by lap type, not by age. Decided to keep dry races with safety cars
+but drop the disrupted laps, and picked 5 Grands Prix (Hungary, Monza,
+Singapore, Bahrain, Abu Dhabi): 2024 to train, 2025 to test, clean sessions
+only for the backtest.
+
+Next: Session 5, fetch function and cache together: turn `fetch_if_missing`
+into tested code in `src/pitwall/`, with tests that don't hit the live API
+(success, empty, HTTP error, malformed body, cache hit).
+
+Still unclear: How to tell the laps just before and after a safety car apart
+from normal laps, since `race_control` only gives deployed and ending laps.
+Why Sakhir 2024 stints show no MEDIUM tyres. Whether the "retired on the last
+lap" pattern holds across all 10 races.

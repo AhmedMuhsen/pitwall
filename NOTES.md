@@ -82,3 +82,20 @@ Still unclear: How to tell the laps just before and after a safety car apart
 from normal laps, since `race_control` only gives deployed and ending laps.
 Why Sakhir 2024 stints show no MEDIUM tyres. Whether the "retired on the last
 lap" pattern holds across all 10 races.
+
+## 2026-11-05 Session 5
+
+Done: Wrote `fetch_endpoint` (allowed endpoint list, OpenF1's 404 "No results
+found" returns `[]`, other HTTP errors and non-list bodies raise) and
+`load_or_fetch` (cache in `data/raw/`, sidecar `.meta.json` per file), with 7
+tests that never touch the live API. `scripts/fetch_races.py` fetched laps and
+stints for all 10 v1 sessions: 9 requests, then 0 on a second run, as
+predicted.
+
+Next: Session 6, cleaning and join design: run the lap/stint join on all 10
+sessions, then write the first exclusion rules (lap 1, pit-out laps, in-laps,
+SC/VSC laps), each with a count.
+
+Still unclear: Writing tests with fakes on my own. I needed a lot of help with
+`monkeypatch`, `pytest.raises` and `tmp_path`, so the next tests should be more
+mine. Also: `is` vs `==`, and why `from x import y` stops monkeypatch working.

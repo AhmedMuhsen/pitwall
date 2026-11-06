@@ -178,3 +178,23 @@ One entry per real decision. Format:
   Sakhir 2024's missing MEDIUM stints turn out to be a data problem. Suzuka
   2025 and Zandvoort 2024 (both undisrupted) stay available as an optional
   unseen-circuit test.
+
+## 2026-11-05 — Request details go in a sidecar file next to each cached response
+
+- **Decision** — `load_or_fetch` writes `<endpoint>_<session_key>.meta.json`
+  next to each cached response, with the endpoint, params, retrieval time (UTC)
+  and record count. A "no results" 404 is cached as `[]` with `records: 0`.
+- **Requirement** — The data rules require recording the endpoint, params,
+  session key and retrieval date for every cached file.
+- **Options** — (a) A sidecar file per response: the cached file stays just the
+  records, but there are twice as many files and they can get out of sync.
+  (b) Wrap the response in `{"meta": ..., "data": [...]}`: one file, but the
+  cached file is no longer the API's records, and the 70+ files already saved
+  don't match. (c) One `manifest.json` for all files: one place to look, but
+  every fetch rewrites a shared file, and a crash halfway can leave it out of
+  step with the files.
+- **Choice and reason** — (a). It keeps the records as the API sent them and
+  works alongside the files cached before this code existed.
+- **What would make us reconsider** — Sidecars going missing or out of sync
+  with their data files, or needing to answer questions across all files
+  (e.g. "what did I fetch last week?") often enough that a manifest pays off.

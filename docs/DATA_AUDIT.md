@@ -184,7 +184,8 @@ Clean sessions: 12 of 34 (7 in 2024, 5 in 2025).
 
 ### Stints
 - No overlapping stints.
-- Unmatched lap (driver 10, lap 34) retired on that lap so there's no lap duration for him.
+- Unmatched lap: driver 10, lap 34, with no stint and no `lap_duration`. It is their last lap
+  (the race went to 70), the same pattern as driver 14 in Mexico 2024. Retirement not confirmed.
 
 ### Tyre ages
 - Age 0 is mostly pit-out laps, and the other bit is race start, so they're much slower than the average pace for the race. 15 lap 1s, and 32 pit-outs.
@@ -219,3 +220,48 @@ Not used: Monte Carlo (2024 red flag on lap 1, processional race), rain races
 2025 until their single rain reading is checked.
 
 To check: Sakhir 2024 stints show only SOFT and HARD, no MEDIUM.
+
+## Curl mistakes
+- Error message can't differentiate between non-existent endpoint call and non-existent session call. We'll have to make sure these cases aren't reachable from our function itself.
+- Both return:
+``` HTTP/1.1 404 Not Found
+  Server: nginx
+  Date: Thu, 05 Nov 2026 22:31:16 GMT
+  Content-Type: application/json
+  Content-Length: 30
+  Connection: keep-alive
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+
+  {"detail":"No results found."}%
+  ```
+## Laps and stints for the 10 v1 sessions
+
+Fetched with `scripts/fetch_races.py` through `pitwall.ingestion.load_or_fetch`
+on 2026-11-05: 9 requests (laps for every session except Hungary 2024), then 0
+on a second run.
+
+| Session | `session_key` | Laps | Stints |
+|---|---:|---:|---:|
+| Bahrain 2024 | 9472 | 1,129 | 63 |
+| Hungary 2024 | 9566 | 1,356 | 60 |
+| Italy (Monza) 2024 | 9590 | 1,009 | 50 |
+| Singapore 2024 | 9606 | 1,179 | 43 |
+| Abu Dhabi 2024 | 9662 | 1,037 | 48 |
+| Bahrain 2025 | 10014 | 1,129 | 62 |
+| Hungary 2025 | 9928 | 1,369 | 49 |
+| Italy (Monza) 2025 | 9912 | 976 | 39 |
+| Singapore 2025 | 9896 | 1,229 | 43 |
+| Abu Dhabi 2025 | 9839 | 1,156 | 47 |
+
+- Bahrain has 1,129 laps in both years. Checked: each file holds only its own
+  `session_key`, and they start on 2024-03-02 and 2025-04-13. A coincidence,
+  not a duplicate.
+- Files fetched through `load_or_fetch` have a `.meta.json` sidecar (endpoint,
+  params, UTC retrieval time, record count). Files cached before it existed
+  have none: all `stints_*`, `laps_9566`, `laps_9625`, and the sessions,
+  weather, race_control and intervals files. Their requests are recorded in
+  the sections above.
+- Not checked yet: the lap/stint join on these sessions, null `lap_duration`
+  counts, and unmatched laps.

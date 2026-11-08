@@ -198,3 +198,63 @@ One entry per real decision. Format:
 - **What would make us reconsider** — Sidecars going missing or out of sync
   with their data files, or needing to answer questions across all files
   (e.g. "what did I fetch last week?") often enough that a manifest pays off.
+
+## 2026-11-08 — Exclusions are labels on each lap, not deletions
+
+- **Decision** — `exclusion_reasons` returns a list of reasons for each lap. An
+  empty list means clean. Cleaning labels laps and doesn't remove them.
+- **Requirement** — Every exclusion needs a count, and the clean dataset (for
+  fitting) and racing dataset (for evaluation) have to come from the same laps
+  under different rules.
+- **Options** — (a) A list of reasons per lap: a lap can break two rules, counts
+  are easy, and both datasets come from one set of labels. (b) Filter functions
+  that drop laps and return a count: simpler to use, but the racing dataset needs
+  a second pipeline. (c) One true/false column per rule: clear in pandas, but
+  every new rule adds a column.
+- **Choice and reason** — (a). Lap 1 with no lap time is a real case of a lap
+  with two reasons, and a lap that looks wrong later can still be inspected.
+- **What would make us reconsider** — The list becomes awkward once laps are in
+  a DataFrame and Parquet file, where (c) may be easier to filter on.
+
+## 2026-11-08 — Tyre age is start age plus laps since the stint began
+
+- **Decision** — `tyre_age = tyre_age_at_start + (lap_number - lap_start)`. Age
+  means laps already completed on that set before this lap, so a new set is age
+  0 on its first lap. Used sets keep their starting age.
+- **Requirement** — Rule 3a: the formula is a likely one, not a fact, and an
+  off-by-one error would shift every wear rate.
+- **Options** — (a) This formula. (b) Reset to 0 at every stint: ignores used
+  sets, and 12 of 60 Hungary 2024 stints start on one. (c) Count a new set's
+  first lap as age 1: possible, but doesn't match the docs' "laps completed".
+- **Choice and reason** — (a). Hand-calculated ages for drivers 44 and 18 in
+  Hungary 2024 match `add_stint_data`. F1's official pit stop summary lists the
+  same stop laps as the stints' `lap_end`, and on the five 2024 races every
+  stint boundary lines up with a flagged pit-out lap. Details are in
+  `docs/DATA_AUDIT.md`.
+- **What would make us reconsider** — An outside source disagreeing on stint
+  boundaries or starting ages. Compounds and starting ages have not been
+  confirmed outside OpenF1.
+
+## 2026-11-08 — In-laps come from stints; laps before a retirement get their own label
+
+- **Decision** — `in_lap` is the last lap of a stint when the driver has another
+  stint afterwards. `before_retirement` is the last lap of a final stint when the
+  driver has a later lap with no stint. That later lap gets `no_stint`.
+- **Requirement** — OpenF1 flags only out-laps. In-laps have to be excluded from
+  fitting because they are slow for non-tyre reasons, and they always fall at a
+  stint's highest tyre age.
+- **Options** — (a) Only the stint rule, recording that 6 laps with a pit-lane
+  code are missed: simplest. (b) Also a separate `before_retirement` reason:
+  catches them, but the function needs the race's laps as well. (c) Use the
+  pit-lane code 2064 directly: exact on these laps, but we can't yet explain the
+  nulls in `segments_sector_*`. `/pit` doesn't help: it has the same 164 stops
+  as the stint rule and none of the 6 laps.
+- **Choice and reason** — (b). The label says `before_retirement` and not
+  `in_lap` because one flagged lap (Abu Dhabi 2024, driver 30, lap 55) has no
+  pit-lane code, so that driver may not have reached the pits. `no_stint` is a
+  separate reason so an unmatched lap can never count as clean, and it doesn't
+  say `crash` because the data can't show why the lap has no stint. Retirements
+  have not been confirmed.
+- **What would make us reconsider** — The excluded-laps sensitivity check showing
+  these labels make no difference (drop the extra rule), or an unmatched lap
+  turning up mid-race.

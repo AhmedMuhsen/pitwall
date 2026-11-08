@@ -99,3 +99,22 @@ SC/VSC laps), each with a count.
 Still unclear: Writing tests with fakes on my own. I needed a lot of help with
 `monkeypatch`, `pytest.raises` and `tmp_path`, so the next tests should be more
 mine. Also: `is` vs `==`, and why `from x import y` stops monkeypatch working.
+
+## 2026-11-08 Session 6
+
+Done: The lap/stint join holds on all 10 races (10 unmatched laps, each a
+driver's unfinished last lap). Wrote `exclusion_reasons` for lap 1, pit-out, null
+lap time, in-lap, before-retirement and no-stint, with per-race counts in
+`docs/DATA_AUDIT.md`; Claude wrote `has_lap` and the final in-lap and retirement
+branch after my attempt. Hand-checked the tyre-age formula on Hungary 2024
+(drivers 44 and 18) against the code, F1's pit stop summary and the OpenF1 docs.
+
+Next: Session 7, safety-car and VSC laps from `race_control`, including the laps
+around them, each with a count. Then the function that labels a whole race, and
+add the missing test for a no-stint lap that has a lap time.
+
+Still unclear: How to tell which laps a safety car actually affected. Which
+reasons should count against the racing dataset. Whether the 10 unmatched laps
+were all retirements, and why driver 30's lap 55 in Abu Dhabi has no pit-lane
+code. Python basics I tripped on: `~` vs `not`, and how pytest treats arguments
+to a `test_` function.

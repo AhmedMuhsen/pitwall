@@ -3,7 +3,9 @@ name = "pitwall"
 version = "0.1.0"
 description = "F1 race-strategy simulator built on historical OpenF1 timing data"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pyarrow>=26.0.1",
+]
 
 [dependency-groups]
 dev = ["pytest>=8"]

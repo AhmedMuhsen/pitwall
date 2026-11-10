@@ -118,3 +118,40 @@ reasons should count against the racing dataset. Whether the 10 unmatched laps
 were all retirements, and why driver 30's lap 55 in Abu Dhabi has no pit-lane
 code. Python basics I tripped on: `~` vs `not`, and how pytest treats arguments
 to a `test_` function.
+
+## 2026-11-08 Session 7
+
+Done: Wrote `find_safety_car_disruption_laps` (only 2 of the 10 races have one:
+Abu Dhabi 2024 laps 1-4, Bahrain 2025 laps 31-36 with the buffer) and
+`add_exclusion_reasons`, which labels a whole race, with my own tests. All 10
+races keep laps in = laps out: 5,217 clean laps of 5,710 in 2024, and 5,382 of
+5,859 in 2025. Counts are in `docs/DATA_AUDIT.md`.
+
+Next: Session 8, the processed dataset: decide which reasons count against the
+racing dataset, then build the Parquet file with tyre age, compound, race lap,
+circuit and year, plus a data-quality report and longest stints per compound and
+circuit.
+
+Still unclear: Whether `race_control`'s `lap_number` follows the leader, which
+is the reason for the lap before the safety car. Whether one lap each side is
+the right buffer. Tests that can't fail: one had no `assert`, another never
+called the function.
+
+## 2026-11-09 Session 8
+
+Done: Chose what counts as a racing lap (Option B: no safety-car, null, no-stint
+or pit laps) and wrote `is_racing_lap`, `is_clean_lap` and `build_race_rows` with
+my own tests. Claude wrote the year totals, `stint_number`,
+`keep_dataset_columns` and the Parquet step. `lap_dataset.parquet` has 11,569
+rows, no duplicate keys, and matches the known counts: 5,217 clean and 5,302
+racing in 2024, 5,382 clean and 5,483 racing in 2025.
+
+Next: Session 9, data-quality report and longest stint per compound and circuit,
+then the exploratory plots. Add the missing docstrings on `is_clean_lap` and
+`build_race_rows`.
+
+Still unclear: `in` with a list on the left, `append` vs `extend`, and why
+passing a whole dict to a function expecting a list didn't crash. Tracing one
+raw lap all the way to its Parquet row in my own words, since Claude wrote the
+last part. Still open from Session 7: whether `race_control`'s `lap_number`
+follows the leader.

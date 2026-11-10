@@ -14,7 +14,7 @@ SESSIONS = {
     9896: "Singapore 2025",
     9839: "Abu Dhabi 2025",
 }
-ENDPOINTS_TO_FETCH = ["laps", "stints"]
+ENDPOINTS_TO_FETCH = ["laps", "stints", "race_control"]
 WAIT_SECONDS = 3
 
 def main():

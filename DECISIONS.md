@@ -258,3 +258,72 @@ One entry per real decision. Format:
 - **What would make us reconsider** — The excluded-laps sensitivity check showing
   these labels make no difference (drop the extra rule), or an unmatched lap
   turning up mid-race.
+
+## 2026-11-08 — Safety-car laps: lap numbers with a one-lap buffer each side
+
+- **Decision** — A safety car or VSC disrupts every driver's laps from one lap
+  before its deployed message to one lap after its end message (`ENDING` or `IN
+  THIS LAP`). Only `category == "SafetyCar"` records count. A safety car with no
+  end message, or an end message with no deployed message, raises `ValueError`.
+- **Requirement** — The 2026-11-05 decision keeps races with a safety car but
+  drops the disrupted laps, including deployment and restart. `race_control` only
+  gives the deployed and ending laps.
+- **Options** — (a) Lap numbers plus one lap each side: simple. The lap after
+  covers the restart, and the lap before covers lapped cars if `lap_number`
+  follows the leader. Costs about 20 extra laps per event. (b) Time overlap per
+  driver using `date_start` and `lap_duration`: most exact, but needs date
+  parsing, and `IN THIS LAP` is a warning and not the moment the safety car ends,
+  so it still needs a buffer. (c) Only the listed laps: simplest, but keeps the
+  slow restart lap as clean.
+- **Choice and reason** — (a). The 10 races have only two events, Abu Dhabi 2024
+  and Bahrain 2025, and the plan warns against a sophisticated `race_control`
+  parser unless it's needed. Raising matches `find_stint`: don't guess when a
+  basic assumption fails, because a missing end would otherwise leave disrupted
+  laps counted as clean. Local double yellows are not included. No race here has
+  a red flag, so the function doesn't handle them yet.
+- **What would make us reconsider** — Residuals consistently off near the safety
+  car, `lap_number` turning out not to follow the leader, or adding a race with a
+  red flag.
+
+## 2026-11-09 — A racing lap excludes safety-car, unscorable and pit laps
+
+- **Decision** — A lap counts as racing unless it has one of these reasons:
+  `safety_car`, `null_lap_duration`, `no_stint`, `in_lap`, `pit_out`. `lap_1` and
+  `before_retirement` laps stay in. This is narrower than rule 3c's "all
+  green-flag racing laps", because in-laps and out-laps are green-flag laps.
+- **Requirement** — Rule 3c fits the model on clean laps and also scores it on a
+  wider racing set, so that removing the hard laps doesn't flatter the error.
+- **Options** — Laps beyond the clean set, 2024 / 2025. (a) Drop only
+  `safety_car`, `null_lap_duration` and `no_stint`: 408 / 353, the literal
+  reading, but it scores the model on pit-lane time. (b) Also drop `in_lap` and
+  `pit_out`: 85 / 101. (c) Also drop `lap_1`: 7 / 2, almost the same as clean, so
+  not really a second dataset.
+- **Choice and reason** — (b): 5,302 racing laps in 2024 and 5,483 in 2025. The
+  simulator charges a stop through the per-circuit pit-loss parameter, so the
+  lap-time model is never asked to predict an in-lap or out-lap. Lap 1 stays
+  because the simulator does have to predict it. Accepted cost: the clean set has
+  no traffic filter, so racing is only about 2% bigger and the two sets of scores
+  will probably look similar.
+- **What would make us reconsider** — Clean and racing scores being so close that
+  the second set tells us nothing, lap 1 dominating the racing error, or the
+  backtest showing that pit loss misses part of the cost of in-laps and out-laps.
+
+## 2026-11-09 — Dataset keeps the reasons list plus `is_clean` and `is_racing`
+
+- **Decision** — Each row in `lap_dataset.parquet` has the `exclusion_reasons` list
+  and two true/false columns, `is_clean` and `is_racing`, set only in
+  `build_race_rows`. The file is written with `pyarrow` from the list of dicts.
+- **Requirement** — The 2026-11-08 labels decision left open whether a list would
+  be awkward once laps are in Parquet. Filtering has to be simple, and both
+  datasets have to come from one definition.
+- **Options** — (a) The list plus two true/false columns: simple filtering and the
+  reason stays visible, but the columns are derived. (b) Only the list: nothing
+  repeated, but every filter re-runs the rules, so "clean" could end up defined
+  in two places. (c) One true/false column per reason: easy in pandas, but every
+  new rule adds a column.
+- **Choice and reason** — (a). `pyarrow` is the only dependency added, because
+  Parquet needs it and it writes a list of dicts directly. It keeps `tyre_age`
+  and `stint_number` as integers with real nulls, where a pandas DataFrame would
+  have turned them into decimals. Pandas waits until the exploratory analysis.
+- **What would make us reconsider** — Code filtering on the reasons list instead
+  of the flags, or the flags and the list getting out of step.

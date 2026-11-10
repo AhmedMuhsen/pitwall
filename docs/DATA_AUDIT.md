@@ -645,3 +645,37 @@ Rule: the last lap of a stint, when the driver has another stint afterwards.
 - [OpenF1 docs](https://openf1.org/docs/): `tyre_age_at_start` is "in laps
   completed", and `lap_end` is the "last completed lap in this stint". That fits
   the unmatched laps: a lap the driver never finished is not in any stint.
+
+## Safety-car laps and clean counts (2026-11-08)
+
+`race_control` has `category == "SafetyCar"` messages in only 2 of the 10 v1
+sessions, and no red flags:
+
+- Abu Dhabi 2024: `VIRTUAL SAFETY CAR DEPLOYED` on lap 2, `VIRTUAL SAFETY CAR
+  ENDING` on lap 3. Window with buffer: laps 1-4.
+- Bahrain 2025: `SAFETY CAR DEPLOYED` on lap 32, `SAFETY CAR IN THIS LAP` on lap
+  35. Window with buffer: laps 31-36.
+- Message text alone is not enough: Bahrain 2025 also has stewards' notes
+  containing "SAFETY CAR INFRINGEMENT" under `category == "Other"`.
+- Not checked: whether `race_control`'s `lap_number` follows the race leader.
+
+Output of `add_exclusion_reasons` on all 10 sessions. Laps in equals laps out in
+every session. This replaces the "No reason yet" column above. The other reason
+counts are unchanged. The 2025 rows use lap numbers and flags only.
+
+| Session | Laps | `safety_car` | Clean laps |
+|---|---:|---:|---:|
+| Bahrain 2024 | 1,129 | 0 | 1,024 |
+| Hungary 2024 | 1,356 | 0 | 1,254 |
+| Monza 2024 | 1,009 | 0 | 927 |
+| Singapore 2024 | 1,179 | 0 | 1,109 |
+| Abu Dhabi 2024 | 1,037 | 77 | 903 |
+| Bahrain 2025 | 1,129 | 120 | 932 |
+| Hungary 2025 | 1,369 | 0 | 1,289 |
+| Monza 2025 | 976 | 0 | 916 |
+| Singapore 2025 | 1,229 | 0 | 1,163 |
+| Abu Dhabi 2025 | 1,156 | 0 | 1,082 |
+
+Totals: 2024 has 5,217 clean laps of 5,710, and 2025 has 5,382 of 5,859. The
+safety-car rule removes 54 further laps from Abu Dhabi 2024 and 92 from Bahrain
+2025. The other laps in its window already had another reason.

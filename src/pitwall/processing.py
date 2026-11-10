@@ -112,9 +112,20 @@ def is_racing_lap(reasons: list) -> bool:
     return True
 
 def is_clean_lap(reasons:list) -> bool:
+    '''
+    Checks if a lap is a clean lap by making sure reasons length is 0.
+    Meaning, nothing triggered add_exclusion_reasons, so the lap is a valid clean lap.
+    Returns True/False
+    '''
     return len(reasons) == 0
 
 def build_race_rows(laps: list[dict], stints: list[dict], race_control: list[dict], circuit, year):
+    '''
+    Takes in the laps, stints, race control, circuit and year.
+    Uses our existing functions add_stint_data, add_exclusion_reasons to gather the stint data and get reasons.
+    Labels each lap wih whether it's a clean lap, racing lap, both, or neither.
+    Returns the race rows labelled.
+    '''
     stint_data = add_stint_data(laps, stints)
     labelled = add_exclusion_reasons(stint_data, stints, race_control)
     rows = []

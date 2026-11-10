@@ -155,3 +155,18 @@ passing a whole dict to a function expecting a list didn't crash. Tracing one
 raw lap all the way to its Parquet row in my own words, since Claude wrote the
 last part. Still open from Session 7: whether `race_control`'s `lap_number`
 follows the leader.
+
+## 2026-11-10 Session 9
+
+Done: Wrote `max_clean_tyre_age` (oldest tyre age on a clean lap per circuit,
+year and compound) with four tests, plus docstrings for `is_clean_lap` and
+`build_race_rows`. On the 10 races it gives 29 entries. Sakhir 2024 has no
+MEDIUM, and Monza 2024 SOFT only reaches age 1.
+
+Next: Session 10, data-quality report (rows, missing values, duplicates,
+exclusion counts per race), then the exploratory plots.
+
+Still unclear: Storing a value in a dict (`d[key] = value` vs `append`), and
+how `defaultdict` creates keys just by reading them. Whether the guard should
+use 2024 only or both years, since 2025 stints run much longer (Monza MEDIUM 20
+vs 44).

@@ -327,3 +327,27 @@ One entry per real decision. Format:
   have turned them into decimals. Pandas waits until the exploratory analysis.
 - **What would make us reconsider** — Code filtering on the reasons list instead
   of the flags, or the flags and the list getting out of step.
+
+## 2026-11-10 — Observed range is the oldest tyre age on a clean lap, kept per year
+
+- **Decision** — The observed range for the simulator's guard (rule 6) is the
+  highest `tyre_age` on a clean lap for each circuit, year and compound, from
+  `max_clean_tyre_age`. A pair with no clean laps has no key, never 0. The table
+  is rebuilt from `lap_dataset.parquet` when needed, not saved as its own file.
+- **Requirement** — Rule 6 and Plan Week 3 task 3: the simulator must refuse or
+  flag stints beyond what the data covers for that compound at that circuit.
+- **Options** — (a) Highest `tyre_age` on a clean lap: exactly what the model is
+  fitted on, and correct for used sets. (b) Highest `tyre_age` on any lap:
+  usually one lap more, because the oldest lap of a stint is the in-lap, which
+  the model never learns from. (c) Longest stint in laps from `/stints`: the
+  plan's wording, but understates used sets (a 20-lap stint on a 3-lap-old set
+  reaches age 22).
+- **Choice and reason** — (a). A missing key says "no data", and 0 would wrongly
+  say the compound was seen there. Sakhir 2024 has no MEDIUM, and Monza 2024 SOFT
+  only reaches age 1. Keyed by year because 2025 stints run much longer (Monza
+  MEDIUM 20 in 2024 vs 44 in 2025, Hungaroring HARD 40 vs 54), so a guard built
+  from 2024 only would refuse many real 2025 strategies in the backtest. Which
+  years the guard uses is left for Week 6.
+- **What would make us reconsider** — The Week 6 choice of years for the guard,
+  or a pair with a high age but very few supporting stints, which may need a
+  stint count next to it.

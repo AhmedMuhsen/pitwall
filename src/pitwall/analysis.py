@@ -1,4 +1,5 @@
 from collections import defaultdict
+from unittest import result
 
 def average_lap_time_by_tyre_age(laps):
     """Average lap time at each tyre age.
@@ -20,3 +21,22 @@ def average_lap_time_by_tyre_age(laps):
         
     mean_lap_by_age = {age : sum(durations) / len(durations) for age, durations in grouped.items()}
     return mean_lap_by_age
+
+def max_clean_tyre_age(rows: list[dict]) -> dict:
+    '''
+    Takes in the race rows
+    Returns the maximum tyre age of a clean lap, grouped by the circuit, year, and compound
+    Circuit, year, compound with no clean laps have no key.
+    '''
+    result = {}
+    for lap in rows:
+        key = (lap['circuit'], lap['year'], lap['compound'])
+        if lap['is_clean']:
+            if key not in result:
+                result[key] = lap['tyre_age']
+
+            elif lap['tyre_age'] > result[key]:
+                result[key] = lap['tyre_age']
+            
+    return result
+        

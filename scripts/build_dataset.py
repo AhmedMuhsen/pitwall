@@ -5,9 +5,10 @@ import pyarrow.parquet as pq
 
 from pitwall.ingestion import load_or_fetch
 
-from pitwall.processing import build_race_rows, keep_dataset_columns
+from pitwall.processing import build_race_rows, keep_dataset_columns, race_quality, quality_markdown
 
 OUTPUT_PATH = Path("data/processed/lap_dataset.parquet")
+REPORT_PATH = Path("docs/DATA_QUALITY.md")
 
 SESSIONS = {
     9472: ("Sakhir", 2024),
@@ -25,41 +26,27 @@ SESSIONS = {
 
 def main():
     all_rows = []
+    report = {}
     for session_key, (circuit, year) in SESSIONS.items():
         laps = load_or_fetch('laps', session_key)
         stints = load_or_fetch('stints', session_key)
         race_control = load_or_fetch('race_control', session_key)
-        race_rows = build_race_rows(laps, stints, race_control, circuit, year)
-        clean_count = 0
-        racing_count = 0
-        for row in race_rows:
-            if row['is_clean']:
-                clean_count += 1
-            if row['is_racing']:
-                racing_count += 1
-        print(circuit, year, len(race_rows), clean_count, racing_count)
+        race_rows = keep_dataset_columns(build_race_rows(laps, stints, race_control, circuit, year))
+        report[f"{circuit} {year}"] = race_quality(race_rows)
         all_rows.extend(race_rows)
 
     for total_year in [2024, 2025]:
-        total_rows = 0
-        total_clean = 0
-        total_racing = 0
-        for row in all_rows:
-            if row['year'] != total_year:
-                continue
-            total_rows += 1
-            if row['is_clean']:
-                total_clean += 1
-            if row['is_racing']:
-                total_racing += 1
-        print(total_year, total_rows, total_clean, total_racing)
-    print(len(all_rows))
+        year_rows = [row for row in all_rows if row['year'] == total_year]
+        report[f"All {total_year}"] = race_quality(year_rows)
+    report["All races"] = race_quality(all_rows)
 
-    dataset_rows = keep_dataset_columns(all_rows)
-    pq.write_table(pa.Table.from_pylist(dataset_rows), OUTPUT_PATH)
-    if pq.read_table(OUTPUT_PATH).to_pylist() != dataset_rows:
+    pq.write_table(pa.Table.from_pylist(all_rows), OUTPUT_PATH)
+    if pq.read_table(OUTPUT_PATH).to_pylist() != all_rows:
         raise ValueError(f"{OUTPUT_PATH} does not match the rows that were written")
-    print(f"Wrote {len(dataset_rows)} rows to {OUTPUT_PATH}")
+    print(f"Wrote {len(all_rows)} rows to {OUTPUT_PATH}")
+
+    REPORT_PATH.write_text(quality_markdown(report), encoding="utf-8")
+    print(f"Wrote {REPORT_PATH}")
 
 if __name__ == "__main__":
     main()

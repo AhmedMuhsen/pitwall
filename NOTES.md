@@ -170,3 +170,17 @@ Still unclear: Storing a value in a dict (`d[key] = value` vs `append`), and
 how `defaultdict` creates keys just by reading them. Whether the guard should
 use 2024 only or both years, since 2025 stints run much longer (Monza MEDIUM 20
 vs 44).
+
+## 2026-11-10 Session 10
+
+Done: Wrote `count_missing`, `count_duplicate_keys` and `count_reasons` with
+tests. Claude wrote `race_quality`, the Markdown tables and the
+`build_dataset.py` changes, so every build writes `docs/DATA_QUALITY.md`. 0
+duplicate keys. 13 missing lap times, 10 laps with no tyre data, 1 missing
+`date_start` (Hungaroring 2024).
+
+Next: Session 11, exploratory plots: lap time against tyre age and race lap,
+and whether the fuel effect shows.
+
+Still unclear: Tuple of names vs tuple of values as a key. Why
+`assert (... for ...)` always passes and `all(...)` is needed.

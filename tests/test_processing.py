@@ -1,10 +1,14 @@
-from pitwall.processing import add_stint_data
+from pitwall.processing import add_stint_data, count_duplicate_keys
 from pitwall.processing import exclusion_reasons
 from pitwall.processing import find_safety_car_disruption_laps
 from pitwall.processing import add_exclusion_reasons
 from pitwall.processing import is_racing_lap
 from pitwall.processing import build_race_rows
 from pitwall.processing import keep_dataset_columns, DATASET_COLUMNS
+from pitwall.processing import count_missing
+from pitwall.processing import count_reasons, EXCLUSION_REASONS
+from pitwall.processing import race_quality, quality_markdown
+
 import pytest
 
 STINTS = [
@@ -233,3 +237,89 @@ def test_keep_dataset_columns_missing_column():
     del row['tyre_age']
     with pytest.raises(KeyError):
         keep_dataset_columns([row])
+
+def test_empty_list():
+    row = []
+    result = count_missing(row)
+    assert all(result[c] == 0 for c in DATASET_COLUMNS)
+
+def test_none_counts():
+    row_1 = {column: 1 for column in DATASET_COLUMNS}
+    row_2 = {column: 1 for column in DATASET_COLUMNS}
+    row_3 = {column: 1 for column in DATASET_COLUMNS}
+    row_1['lap_duration'] = None
+    row_2['lap_duration'] = None
+    row_2['tyre_age'] = None
+    result = count_missing([row_1, row_2, row_3])
+    assert result['lap_duration'] == 2
+    assert result['tyre_age'] == 1
+    assert result['compound'] == 0
+
+
+def test_one_duplicate():
+    rows = [
+        {"session_key": 1, "driver_number": 1, "lap_number" : 2},
+        {"session_key": 1, "driver_number": 1, "lap_number" : 2},
+        {"session_key": 1, "driver_number": 2, "lap_number" : 2},
+        
+    ]
+    result = count_duplicate_keys(rows)
+    assert result == 1
+
+def test_no_duplicate():
+    rows = [
+        {"session_key": 1, "driver_number": 1, "lap_number" : 2},
+        {"session_key": 2, "driver_number": 1, "lap_number" : 2},
+        {"session_key": 3, "driver_number": 2, "lap_number" : 2},
+        
+    ]
+    result = count_duplicate_keys(rows)
+    assert result == 0
+
+def test_empty_list_duplicate():
+    rows = []
+    result = count_duplicate_keys(rows)
+    assert result == 0
+
+def test_lap_with_two_reasons_counts_both():
+    rows = [
+        {'exclusion_reasons': ['lap_1', 'pit_out']},
+        {'exclusion_reasons': ['pit_out']},
+        {'exclusion_reasons': []},
+    ]
+    result = count_reasons(rows)
+    assert result['lap_1'] == 1
+    assert result['pit_out'] == 2
+    assert result['safety_car'] == 0
+
+def test_empty_list_reasons():
+    result = count_reasons([])
+    assert all(result[reason] == 0 for reason in EXCLUSION_REASONS)
+
+def test_unknown_reason_raises():
+    rows = [{'exclusion_reasons': ['red_flag']}]
+    with pytest.raises(KeyError):
+        count_reasons(rows)
+
+def test_race_quality():
+    laps = [{**lap, 'session_key': 1, 'meeting_key': 1, 'date_start': None} for lap in RACE_LAPS]
+    rows = keep_dataset_columns(build_race_rows(laps, STINTS, [], 'Monza', 2024))
+    result = race_quality(rows)
+    assert result['rows'] == 4
+    assert result['duplicate_keys'] == 0
+    assert result['clean'] == 1
+    assert result['racing'] == 2
+    assert result['missing_tyre_age'] == 0
+    assert result['missing_date_start'] == 4
+    assert result['lap_1'] == 1
+    assert result['in_lap'] == 1
+    assert result['pit_out'] == 1
+
+def test_quality_markdown():
+    laps = [{**lap, 'session_key': 1, 'meeting_key': 1, 'date_start': None} for lap in RACE_LAPS]
+    rows = keep_dataset_columns(build_race_rows(laps, STINTS, [], 'Monza', 2024))
+    markdown = quality_markdown({'Monza 2024': race_quality(rows)})
+    assert '| Monza 2024 | 4 | 0 | 1 | 2 |' in markdown
+    assert '| Race | `date_start` |' in markdown
+    assert '`tyre_age`' in markdown.split('No missing values in:')[1]
+    assert '| Monza 2024 | 1 | 1 | 0 | 0 | 0 | 1 | 0 |' in markdown

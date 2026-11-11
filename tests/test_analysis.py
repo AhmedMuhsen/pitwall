@@ -1,5 +1,6 @@
 from pitwall.analysis import average_lap_time_by_tyre_age
 from pitwall.analysis import max_clean_tyre_age
+from pitwall.analysis import median_clean_lap_by_race_lap
 import pytest
 
 def test_empty_lap_raises():
@@ -69,3 +70,28 @@ def test_two_years():
     result = max_clean_tyre_age(rows)
     assert ("Monza", 2024, "SOFT") in result
     assert ("Monza", 2025, "SOFT") in result
+
+def test_median_by_race_lap():
+    rows = [
+        {"session_key": 1, "lap_number": 1, "lap_duration": 80.0, "is_clean": True},
+        {"session_key": 1, "lap_number": 1, "lap_duration": 81.0, "is_clean": True},
+        {"session_key": 1, "lap_number": 1, "lap_duration": 99.0, "is_clean": False},
+        {"session_key": 1, "lap_number": 2, "lap_duration": 79.0, "is_clean": True},
+        {"session_key": 1, "lap_number": 2, "lap_duration": 79.5, "is_clean": True},
+        {"session_key": 1, "lap_number": 2, "lap_duration": 85.0, "is_clean": True},
+        {"session_key": 2, "lap_number": 1, "lap_duration": 50.0, "is_clean": True},
+    ]
+
+    result = median_clean_lap_by_race_lap(rows, 1)
+    assert result == {1: 80.5, 2: 79.5}
+
+def test_median_by_race_lap_no_clean_laps():
+    rows = [
+        {"session_key": 1, "lap_number": 1, "lap_duration": 80.0, "is_clean": False},
+    ]
+
+    assert median_clean_lap_by_race_lap(rows, 1) == {}
+
+def test_median_by_race_lap_empty_raises():
+    with pytest.raises(ValueError):
+        median_clean_lap_by_race_lap([], 1)

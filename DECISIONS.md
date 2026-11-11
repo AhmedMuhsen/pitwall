@@ -351,3 +351,23 @@ One entry per real decision. Format:
 - **What would make us reconsider** — The Week 6 choice of years for the guard,
   or a pair with a high age but very few supporting stints, which may need a
   stint count next to it.
+
+## 2026-11-11 — Plots with matplotlib only, from a script
+
+- **Decision** — Exploratory plots are made by `scripts/explore.py` with
+  matplotlib and written as PNGs to `docs/figures/`. No pandas and no notebook
+  yet; the data functions stay plain Python over the list of dicts.
+- **Requirement** — Plan Week 3 task 10: plots of lap time against tyre age and
+  against race lap, as part of a reproducible exploratory analysis.
+- **Options** — (a) matplotlib only, from a script. (b) matplotlib plus pandas:
+  grouping becomes a `groupby` one-liner, but adds a dependency before we need
+  it and skips writing the grouping logic. (c) A Jupyter notebook: good for
+  poking around, but adds jupyter, is hard to diff and easy to leave in a state
+  that won't re-run.
+- **Choice and reason** — (a). matplotlib is the one dependency added, because
+  charts can't be drawn without a plotting library. Grouping stays in tested
+  functions in `analysis.py`; the script only draws. pandas comes in Week 4 with
+  scikit-learn if there's a real need for it.
+- **What would make us reconsider** — Week 4 feature building getting awkward
+  with lists of dicts, or needing interactive exploration that a script makes
+  slow.

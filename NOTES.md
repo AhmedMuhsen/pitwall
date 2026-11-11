@@ -184,3 +184,18 @@ and whether the fuel effect shows.
 
 Still unclear: Tuple of names vs tuple of values as a key. Why
 `assert (... for ...)` always passes and `all(...)` is needed.
+
+## 2026-11-11 Session 11
+
+Done: Wrote `median_clean_lap_by_race_lap` (Claude wrote its tests and
+docstring) and Claude wrote `scripts/explore.py`, which saves two Hungaroring
+2024 plots to `docs/figures/`. Median clean lap falls about 3 s over the race,
+in a sawtooth with drops near laps 7, 29 and 50. Within-stint lines are
+mostly flat because fuel burn cancels wear.
+
+Next: Session 12, Week 4: choose the target (delta to the driver's median
+clean lap) and build the zero baseline with the 2024/2025 split.
+
+Still unclear: `.items()` gives (key, value) and lists can't be dict keys.
+Whether the drops really line up with pit windows (not checked against
+stints). How much of the race-lap trend is fuel vs track evolution.

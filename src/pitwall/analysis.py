@@ -1,6 +1,5 @@
 from collections import defaultdict
-from unittest import result
-
+from statistics import median
 def average_lap_time_by_tyre_age(laps):
     """Average lap time at each tyre age.
 
@@ -39,4 +38,30 @@ def max_clean_tyre_age(rows: list[dict]) -> dict:
                 result[key] = lap['tyre_age']
             
     return result
+
+def median_clean_lap_by_race_lap(laps, session_key):
+    """Median clean lap time at each race lap, for one race.
+
+    laps: list of dicts (dataset rows), each with "session_key" (int),
+        "lap_number" (int), "lap_duration" (float seconds) and
+        "is_clean" (bool)
+    session_key: the race to use; rows from other sessions are ignored
+
+    returns: dict mapping lap_number -> median lap_duration in seconds,
+        taken across the drivers whose lap was clean
+
+    raises ValueError if laps is empty. Only clean laps are used, so laps
+    with no time (never clean) are left out; a lap number with no clean
+    laps is absent from the result, and a session with none returns {}.
+    """
+    if not laps:
+        raise ValueError("Laps list is empty")
+    grouped = defaultdict(list)
+    for lap in laps:
+        if lap['session_key'] == session_key and lap['is_clean']:
+            grouped[lap['lap_number']].append(lap['lap_duration'])
+        
+    median_duration_by_lap =  {lap_number : median(durations) for lap_number, durations in grouped.items()}
+
+    return median_duration_by_lap
         

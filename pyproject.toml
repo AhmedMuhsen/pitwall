@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "F1 race-strategy simulator built on historical OpenF1 timing data"
 requires-python = ">=3.13"
 dependencies = [
+    "matplotlib>=3.11.2",
     "pyarrow>=26.0.1",
 ]
 

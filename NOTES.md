@@ -199,3 +199,18 @@ clean lap) and build the zero baseline with the 2024/2025 split.
 Still unclear: `.items()` gives (key, value) and lists can't be dict keys.
 Whether the drops really line up with pit windows (not checked against
 stints). How much of the race-lap trend is fuel vs track evolution.
+
+## 2026-11-12 Session 12
+
+Done: New `features.py` with `driver_reference_laps` (median clean lap per
+driver per race) and `add_delta` (lap time minus that reference, None when
+there's no reference or no time). Claude fixed one docstring and wrote the
+`add_delta` tests. On the real data: 11,569 rows in and out, every driver's
+median clean delta is 0, and 13 rows have delta None (the 13 missing lap
+times; two lap-1 retirements have no reference).
+
+Next: Session 13, the 2024/2025 split, the zero baseline, and scoring
+functions (MAE, RMSE, bias) on clean and racing laps.
+
+Still unclear: Why float sums like (82.1 + 84.3) / 2 aren't exact and when
+to use `pytest.approx`. `result = ...` replaces, `result.append(...)` adds.

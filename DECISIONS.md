@@ -371,3 +371,25 @@ One entry per real decision. Format:
 - **What would make us reconsider** — Week 4 feature building getting awkward
   with lists of dicts, or needing interactive exploration that a script makes
   slow.
+
+## 2026-11-12 — Target is delta to the driver's median clean lap, built in features.py
+
+- **Decision** — The model predicts `delta`: lap_duration minus that driver's
+  median clean lap in that race. It's computed at modeling time by
+  `driver_reference_laps` and `add_delta` in `src/pitwall/features.py`, not
+  stored in `lap_dataset.parquet`. No reference or no lap time gives None.
+- **Requirement** — Plan Week 4 task 1 and rule 1: remove the circuit, car and
+  driver pace so the model only learns tyre-age and race-lap effects.
+- **Options** — Target: (1) delta to the driver's median clean lap, or (2) raw
+  lap time with circuit as a feature. Where it lives: (a) `features.py` at
+  modeling time, (b) a column in the Parquet dataset, (c) inside the training
+  code.
+- **Choice and reason** — (1) and (a). Delta removes circuit and driver pace in
+  one subtraction. The dataset stays facts about laps, so changing the
+  reference later needs no rebuild, and the evaluation and simulator can share
+  the same function. Accepted cost: the reference comes from the race itself,
+  so it isn't known mid-race. That's fine because the simulator only runs on
+  races in the dataset, but it blocks live or replay use without a different
+  reference.
+- **What would make us reconsider** — Wanting replay mode or an unseen race, or
+  the median being pulled by a driver with very few clean laps.

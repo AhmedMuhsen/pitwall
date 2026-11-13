@@ -393,3 +393,21 @@ One entry per real decision. Format:
   reference.
 - **What would make us reconsider** — Wanting replay mode or an unseen race, or
   the median being pulled by a driver with very few clean laps.
+
+## 2026-11-12 — Metrics written by hand; split rejects unexpected years
+
+- **Decision** — MAE, RMSE and bias come from `score` in
+  `src/pitwall/evaluation.py`, written in plain Python, with error defined as
+  predicted minus actual. `split_by_year` puts 2024 in train and 2025 in test,
+  and raises `ValueError` for any other year.
+- **Requirement** — Plan Week 4 tasks 3, 4 and 7: a zero baseline and a
+  2024/2025 split, scored with MAE, RMSE and bias in seconds on the clean and
+  racing laps.
+- **Options** — Metrics: (a) write them by hand, (b) add scikit-learn now and
+  use its metric functions. Unexpected years: raise, or silently drop them.
+- **Choice and reason** — (a). Each is one line, needs no dependency yet, and
+  writing them makes the scores mean something. Raising on other years because
+  silently dropping rows would shrink the data without anyone noticing.
+- **What would make us reconsider** — Needing weighted or sliced metrics that
+  scikit-learn gives for free, or adding a third year or an unseen-circuit test
+  set, which would need a split by more than year.

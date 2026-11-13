@@ -214,3 +214,18 @@ functions (MAE, RMSE, bias) on clean and racing laps.
 
 Still unclear: Why float sums like (82.1 + 84.3) / 2 aren't exact and when
 to use `pytest.approx`. `result = ...` replaces, `result.append(...)` adds.
+
+## 2026-11-12 Session 13
+
+Done: New `evaluation.py` with `score` (MAE, RMSE, bias in seconds) and
+`split_by_year` (2024 train, 2025 test, error on any other year), with tests.
+Claude wrote `score`'s docstring and `scripts/evaluate.py`. Zero baseline on
+2025: clean MAE 0.792 s, RMSE 1.129 s, bias +0.022 s (n=5,382); racing MAE
+0.955 s, RMSE 1.800 s, bias -0.156 s (n=5,483).
+
+Next: Session 14, add scikit-learn, build features, fit tyre age + compound,
+then add race lap, and compare against the zero baseline.
+
+Still unclear: Lists can't be subtracted, `zip` pairs them up. Why a function
+with no `return` gives None. Whether lap 1 causes the big racing RMSE (not
+checked yet).

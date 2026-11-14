@@ -411,3 +411,42 @@ One entry per real decision. Format:
 - **What would make us reconsider** — Needing weighted or sliced metrics that
   scikit-learn gives for free, or adding a third year or an unseen-circuit test
   set, which would need a split by more than year.
+
+## 2026-11-13 — Models use pandas and a scikit-learn Pipeline
+
+- **Decision** — Model code in `src/pitwall/model.py` builds a scikit-learn
+  `Pipeline`: a `ColumnTransformer` (one-hot `compound`, passthrough numeric
+  columns, optional `PairAgeColumns` step) then `LinearRegression`. Rows become
+  a pandas DataFrame only at model time; the dataset functions stay list of
+  dicts.
+- **Requirement** — Plan Week 4 task 5: a basic scikit-learn pipeline, and the
+  same columns, in the same order, for 2024 training and 2025 test rows.
+- **Options** — (a) `DictVectorizer` on a feature dict per lap: no pandas,
+  interaction keys written by hand. (b) pandas + `ColumnTransformer`: the most
+  common production setup, but interactions need a custom step. (c) A
+  hand-built list of floats: column order kept by hand.
+- **Choice and reason** — (b), to learn the standard tooling. The wear rate per
+  compound@circuit is a small custom transformer class because it has to
+  remember the training pairs between fit and predict, which a plain function
+  can't do inside a pipeline. Plain `tyre_age` is left out when the per-pair
+  columns are on, because they add up to it.
+- **What would make us reconsider** — The custom step growing beyond a thin
+  wrapper, or needing standard errors (then statsmodels or a formula library).
+
+## 2026-11-13 — 2025 laps on a pair with no 2024 training laps are left out of scoring
+
+- **Decision** — `scripts/evaluate.py` drops 2025 rows whose compound@circuit
+  pair has no 2024 clean laps, for every model, and prints the count. Today
+  that's Sakhir MEDIUM: 520 rows (443 racing laps).
+- **Requirement** — Model C has no wear rate for a pair it never saw, and
+  `PairAgeColumns` raises rather than guess.
+- **Options** — (a) Leave those laps out of scoring for all models. (b) Use a
+  fallback rate (e.g. Model B's shared slope) for unseen pairs. (c) Train on
+  some 2025 laps of that pair: leaks test data, rejected.
+- **Choice and reason** — (a). All models are scored on the same rows, and it
+  matches the observed-range guard (2026-11-10), which has no Sakhir MEDIUM key,
+  so the simulator would refuse those stints anyway. Accepted cost: the test set
+  is about 8% smaller and says nothing about that pair.
+- **What would make us reconsider** — Partial pooling in Week 5, which gives
+  sparse or unseen pairs a rate borrowed from the compound, or the backtest
+  needing Sakhir MEDIUM stints.

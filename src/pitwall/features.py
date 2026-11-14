@@ -1,6 +1,7 @@
 """Model inputs and target built from the processed lap dataset rows."""
 from collections import defaultdict
 from statistics import median
+import pandas as pd
 
 def driver_reference_laps(rows: list[dict]) -> dict[tuple, float]:
     '''
@@ -41,3 +42,14 @@ def add_delta(rows: list[dict], references: dict[tuple, float]) -> list[dict]:
             delta = row['lap_duration'] - ref
         result.append({**row, "delta": delta})
     return result
+
+def pair_age_columns(df: pd.DataFrame, pairs: list[str]) -> pd.DataFrame:
+    pair = df['compound'] + '@' + df['circuit']
+
+    unknown = pair[~pair.isin(pairs)]
+    if not unknown.empty:
+        raise ValueError(f"Pairs not seen in training: {sorted(set(unknown))}")
+    columns = {}
+    for p in pairs:
+        columns["age:" + p] = (pair == p) * df['tyre_age']
+    return pd.DataFrame(columns, index = df.index)

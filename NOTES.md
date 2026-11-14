@@ -229,3 +229,20 @@ then add race lap, and compare against the zero baseline.
 Still unclear: Lists can't be subtracted, `zip` pairs them up. Why a function
 with no `return` gives None. Whether lap 1 causes the big racing RMSE (not
 checked yet).
+
+## 2026-11-13 Session 14
+
+Done: Added scikit-learn and pandas. New `model.py` with `build_pipeline`
+(compound one-hot, tyre age, optional race lap, optional wear per
+compound@circuit) and `pair_age_columns` in `features.py`. Claude wrote the
+`PairAgeColumns` class, docstrings, `pair_age_columns` (after I got stuck) and
+most of the `evaluate.py` loop. 2025 clean MAE (n=4,944, Sakhir MEDIUM left
+out): zero 0.803, A 0.792, B (+ race lap) 0.642, C (+ wear per pair) 0.667.
+Adding race lap grew the wear slope from 0.010 to 0.060 s/lap, fuel -0.049.
+
+Next: Session 15, Week 5: fix sparse pairs in Model C (Monza SOFT has 1
+clean lap and a -0.84 s/lap rate), look at error slices, and why B's bias
+is +0.15 s on 2025.
+
+Still unclear: How fit and transform pass through a pipeline step. Why
+`"False"` is truthy. Why C is worse at Hungaroring (longer 2025 stints?).

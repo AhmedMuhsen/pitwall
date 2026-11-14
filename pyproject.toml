@@ -5,7 +5,9 @@ description = "F1 race-strategy simulator built on historical OpenF1 timing data
 requires-python = ">=3.13"
 dependencies = [
     "matplotlib>=3.11.2",
+    "pandas>=3.1.1",
     "pyarrow>=26.0.1",
+    "scikit-learn>=1.9.1",
 ]
 
 [dependency-groups]

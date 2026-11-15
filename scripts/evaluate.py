@@ -2,11 +2,14 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.parquet as pq
 
-from pitwall.evaluation import score, split_by_year
+from pitwall.evaluation import score, score_by_group, split_by_year
 from pitwall.features import add_delta, driver_reference_laps
 from pitwall.model import build_pipeline
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")
+# Tyre-age buckets for the error slices: 0-9, 10-19, 20-29, 30+ laps.
+AGE_BINS = [-1, 9, 19, 29, float("inf")]
+AGE_LABELS = ["0-9", "10-19", "20-29", "30+"]
 
 
 def scored_rows(rows, flag):
@@ -34,7 +37,25 @@ def fit_model(include_race_lap: bool, wear_by_pair: bool, train):
 def training_pairs(train):
     """(compound, circuit) pairs on the 2024 clean laps the models are fitted on."""
     usable_rows, _ = scored_rows(train, "is_clean")
-    return {(row["compound"], row["circuit"]) for row in usable_rows}
+    return {(row["compound"], row["circuit"]) for row in usable_rows}    
+
+def print_slices(train, test):
+    """Error slices on 2025 clean laps, Model B next to Model C."""
+    usable, _ = scored_rows(test, "is_clean")
+    test_df = pd.DataFrame(usable)
+    test_df["age_bucket"] = pd.cut(test_df["tyre_age"], bins=AGE_BINS, labels=AGE_LABELS)
+
+    models = {"B": fit_model(True, False, train), "C": fit_model(True, True, train)}
+    for by in ("compound", "circuit", "age_bucket"):
+        tables = []
+        for name, pipeline in models.items():
+            scored = test_df.assign(predicted=pipeline.predict(test_df))
+            tables.append(score_by_group(scored, by)[["mae", "bias"]].add_prefix(f"{name}_"))
+        table = pd.concat(tables, axis=1)
+        table["n"] = test_df.groupby(by, observed=True).size()
+        print(f"\nClean 2025 laps by {by} (seconds)")
+        print(table.round(3).to_string())
+
 
 def main():
     rows = pq.read_table(DATASET_PATH).to_pylist()
@@ -71,6 +92,9 @@ def main():
                 f"  {flag:<9}  n={len(usable):>5}  skipped (no delta)={skipped}  "
                 f"MAE={result['mae']:.3f}s  RMSE={result['rmse']:.3f}s  bias={result['bias']:+.3f}s"
             )
+
+    print_slices(train, test)
+
 
 if __name__ == "__main__":
     main()

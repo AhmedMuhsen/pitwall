@@ -246,3 +246,19 @@ is +0.15 s on 2025.
 
 Still unclear: How fit and transform pass through a pipeline step. Why
 `"False"` is truthy. Why C is worse at Hungaroring (longer 2025 stints?).
+
+## 2026-11-14 Session 15
+
+Done: `score_by_group` in `evaluation.py` (pandas groupby, reuses `score`,
+adds `n`) with tests; Claude filled in the test values, docstring and the
+`print_slices` output in `evaluate.py`. On 2025 clean laps, B's bias grows
+with tyre age: about 0 at 0-19 laps, +0.26 s at 20-29, +0.78 s at 30+ (still
++0.72 s within the 2024 age range). C beats B at Singapore and Yas Marina,
+loses at Hungaroring and Monza; C's SOFT bias is -0.28 s (Monza SOFT rate).
+
+Next: Session 16, Week 5: pick one improvement. Old-tyre bias first
+(shape of the wear curve), sparse pairs in C after.
+
+Still unclear: Whether the old-tyre bias is curve shape, 2025 tyres wearing
+less, or teams only running long stints on tyres that hold up. How to tell
+these apart.

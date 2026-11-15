@@ -1,4 +1,5 @@
 import math
+import pandas as pd
 
 def score(actual: list[float], predicted: list[float]) -> dict[str, float]:
     '''
@@ -23,6 +24,29 @@ def score(actual: list[float], predicted: list[float]) -> dict[str, float]:
     bias = sum(errors) / len(errors)
     return {'mae': mae, 'rmse': rmse, 'bias': bias}
 
+def score_by_group(df: pd.DataFrame, by: str) -> pd.DataFrame:
+    '''
+    score for each group of rows, e.g. per compound or per circuit.
+
+    df: DataFrame with "delta" (actual, seconds), "predicted" (seconds) and
+        the column named by `by`
+    by: name of the column to group on
+
+    returns: DataFrame with one row per group (indexed by the group label)
+        and columns "mae", "rmse", "bias" (seconds, as in score) and "n"
+        (rows in that group). A group with small n can show a large error
+        that means little.
+
+    raises ValueError if df is empty.
+    '''
+    if df.empty:
+        raise ValueError("DataFrame is empty")
+    
+    def group_scores(g):
+        result = score(g['delta'].tolist(), g['predicted'].tolist())
+        result["n"] = len(g)
+        return pd.Series(result)
+    return df.groupby(by).apply(group_scores)
 
 def split_by_year(rows: list[dict]) -> (list[dict], list[dict]):
     '''

@@ -1,5 +1,5 @@
 import pytest
-from pitwall.evaluation import score, split_by_year, score_by_group
+from pitwall.evaluation import score, split_by_year, score_by_group, leave_one_race_out
 import math
 import pandas as pd
 
@@ -72,3 +72,23 @@ def test_score_by_group_scores_each_group():
 def test_score_by_group_empty_dataframe():
     with pytest.raises(ValueError):
         score_by_group(pd.DataFrame(), "compound")
+
+def test_leave_one_race_out_holds_out_each_race_once():
+    rows = [
+        {"session_key": 1, "lap_number": 1},
+        {"session_key": 1, "lap_number": 2},
+        {"session_key": 2, "lap_number": 1},
+    ]
+    splits = leave_one_race_out(rows)
+
+    assert len(splits) == 2
+
+    key, train, validation = splits[0]
+    assert key == 1
+    assert train == [{'session_key': 2, 'lap_number': 1}]
+    assert validation == [{'session_key': 1, 'lap_number': 1}, {'session_key': 1, 'lap_number': 2}]
+
+def test_leave_one_race_out_needs_two_races():
+    rows = [{"session_key": 1, "lap_number": 1}]
+    with pytest.raises(ValueError):
+        leave_one_race_out(rows)

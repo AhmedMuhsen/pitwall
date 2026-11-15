@@ -53,3 +53,32 @@ def pair_age_columns(df: pd.DataFrame, pairs: list[str]) -> pd.DataFrame:
     for p in pairs:
         columns["age:" + p] = (pair == p) * df['tyre_age']
     return pd.DataFrame(columns, index = df.index)
+
+def add_race_fraction(rows: list[dict]) -> list[dict]:
+    '''
+    Adds how far through its race each lap is (a fuel proxy that works
+    across races of different lengths).
+
+    rows: list of dicts (dataset rows), each with "session_key" (int) and
+        "lap_number" (int)
+
+    returns: new list of dicts, each row with "race_fraction" added:
+        lap_number divided by the highest lap_number in that race (the
+        leader's lap count, which is the scheduled race distance and is
+        known before the race). The input rows are not changed.
+
+    raises ValueError if rows is empty.
+    '''
+    if not rows:
+        raise ValueError("Laps list is empty")
+    
+    race_laps = {}
+    for row in rows:
+        key = row['session_key']
+        race_laps[key] = max(race_laps.get(key, 0), row['lap_number'])
+
+    result = []
+    for row in rows:
+        fraction = row['lap_number'] / race_laps[row['session_key']]
+        result.append({**row, "race_fraction": fraction})
+    return result

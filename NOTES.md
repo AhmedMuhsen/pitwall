@@ -262,3 +262,20 @@ Next: Session 16, Week 5: pick one improvement. Old-tyre bias first
 Still unclear: Whether the old-tyre bias is curve shape, 2025 tyres wearing
 less, or teams only running long stints on tyres that hold up. How to tell
 these apart.
+
+## 2026-11-14 Session 16
+
+Done: `leave_one_race_out` in `evaluation.py` and `add_race_fraction` in
+`features.py`, with tests (Claude wrote the race-fraction tests, docstrings
+and the held-out printing in `evaluate.py`), plus a `fuel_column` option in
+`build_pipeline`. Held-out 2024: B's bias is about 0 at every tyre age, so
+the old-tyre bias is a 2025 effect and wear stays linear. Fuel by race
+fraction cut MAE 0.572 -> 0.545 s and mostly removed the Hungaroring and
+Monza drift. Wear rate unchanged at 0.061 s/lap.
+
+Next: Session 17: how to validate per-circuit wear (C) when each circuit is
+in 2024 only once, then sparse pairs. Or start the Week 5 write-up.
+
+Still unclear: Why Hungaroring's last 10 laps, Sakhir's first 10 and
+Singapore's early laps are still off. How much of the fuel term is track
+evolution.

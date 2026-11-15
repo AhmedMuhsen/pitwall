@@ -65,3 +65,28 @@ def split_by_year(rows: list[dict]) -> (list[dict], list[dict]):
         else:
             raise ValueError(f'Unexpected race year: {r['year']}')
     return train, test
+
+def leave_one_race_out(rows: list[dict]) -> list[tuple[int, list[dict], list[dict]]]:
+    '''
+    One (train, validation) split per race, holding that race out.
+
+    rows: list of dicts (dataset rows), each with "session_key" (int)
+
+    returns: list of (session_key, train_rows, validation_rows), one per race
+        in sorted session_key order. validation_rows are that race's rows and
+        train_rows are every other race's rows, so no race is in both.
+
+    raises ValueError if rows is empty or covers fewer than 2 races.
+    '''
+    if not rows:
+        raise ValueError("Rows list is empty")
+    session_keys = sorted({row['session_key'] for row in rows})
+    if len(session_keys) < 2:
+        raise ValueError(f'Need at least 2 races, got {len(session_keys)}')
+    
+    splits = []
+    for key in session_keys:
+        validation = [row for row in rows if row['session_key'] == key]
+        train = [row for row in rows if row['session_key'] != key]
+        splits.append((key, train, validation))
+    return splits

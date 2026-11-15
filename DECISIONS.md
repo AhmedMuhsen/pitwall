@@ -450,3 +450,28 @@ One entry per real decision. Format:
 - **What would make us reconsider** — Partial pooling in Week 5, which gives
   sparse or unseen pairs a rate borrowed from the compound, or the backtest
   needing Sakhir MEDIUM stints.
+
+## 2026-11-14 — Fuel proxy is race fraction; wear stays linear
+
+- **Decision** — Model B uses `race_fraction` (lap_number / the race's highest
+  lap_number, from `add_race_fraction`) as its fuel term instead of
+  `lap_number`. The tyre-age term stays a straight line. Model choices are made
+  on held-out 2024 races (`leave_one_race_out`).
+- **Requirement** — Week 5: one improvement, chosen from residuals, kept only if
+  it helps on held-out races.
+- **Options** — (a) Curved wear term: suggested by the +0.78 s bias at age 30+
+  on 2025, but held-out 2024 bias is within ±0.04 s at every age, so not
+  justified. (b) Fuel by race fraction: one coefficient, testable with
+  leave-one-race-out. (c) A fuel rate per circuit: each circuit is in 2024 once,
+  so leave-one-race-out can't validate it. (d) Keep B as is.
+- **Choice and reason** — (b). Held-out 2024 MAE 0.572 -> 0.545 s, RMSE 0.780 ->
+  0.737 s, and the per-circuit drift (Hungaroring falling to -1.21 s, Monza
+  rising to +0.70 s) mostly goes away. The same fuel load spread over 53 or 70
+  laps gives a different gain per lap, which fits that pattern; track evolution
+  is in the same term, so this isn't proof. Wear rate is unchanged (0.061 s/lap).
+  Cost: one feature function and one parameter.
+- **What would make us reconsider** — Races of very different length added later
+  behaving badly, a shortened race (the highest lap_number would be wrong), or
+  a 2024 old-tyre bias appearing once more races are added. Also: per-circuit
+  wear (Model C) can't be checked by leaving one 2024 race out, so it needs its
+  own validation plan.

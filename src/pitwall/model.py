@@ -30,16 +30,18 @@ class PairAgeColumns(BaseEstimator, TransformerMixin):
         return ["age:" + p for p in self.pairs_]
 
 
-def build_pipeline(include_race_lap: bool, wear_by_pair: bool = False) -> Pipeline:
+def build_pipeline(include_race_lap: bool, wear_by_pair: bool = False, fuel_column: str = "lap_number") -> Pipeline:
     '''
     Unfitted linear model of delta from compound, tyre age and optionally race lap.
 
-    include_race_lap: if True, "lap_number" is used as a feature (fuel proxy)
+    include_race_lap: if True, fuel_column is used as a feature (fuel proxy)
     wear_by_pair: if True, each compound@circuit pair gets its own tyre-age
         column (PairAgeColumns) instead of one shared "tyre_age" column
+    fuel_column: name of the fuel-proxy column, "lap_number" (default) or
+        "race_fraction" (see features.add_race_fraction)
 
     returns: sklearn Pipeline that expects a DataFrame with "compound" (str)
-        and "tyre_age" (int), plus "lap_number" (int) when include_race_lap
+        and "tyre_age" (int), plus fuel_column when include_race_lap
         is True and "circuit" (str) when wear_by_pair is True. Compound is
         one-hot encoded, the numeric columns pass through unchanged, and
         every other column is dropped.
@@ -53,7 +55,7 @@ def build_pipeline(include_race_lap: bool, wear_by_pair: bool = False) -> Pipeli
     if not wear_by_pair:
         num_cols.append('tyre_age')
     if include_race_lap:
-        num_cols.append('lap_number')
+        num_cols.append(fuel_column)
     
     transformers = [
         ("cat", OneHotEncoder(handle_unknown='error'), cat_cols),

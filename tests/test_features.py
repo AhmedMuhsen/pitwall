@@ -1,7 +1,7 @@
 import pytest
 
 from pitwall.features import driver_reference_laps
-from pitwall.features import add_delta, pair_age_columns
+from pitwall.features import add_delta, add_race_fraction, pair_age_columns
 import pandas as pd
 import pytest
 
@@ -80,3 +80,19 @@ def test_pair_age_columns_raises_on_unseen_pair():
     df = pd.DataFrame({"compound": ["MEDIUM"], "circuit": ["Sakhir"], "tyre_age": [5]})
     with pytest.raises(ValueError, match="MEDIUM@Sakhir"):
         pair_age_columns(df, ["HARD@Monza", "SOFT@Sakhir"])
+
+def test_add_race_fraction_uses_each_race_length():
+    rows = [
+        {"session_key": 1, "lap_number": 1},
+        {"session_key": 1, "lap_number": 4},
+        {"session_key": 2, "lap_number": 1},
+        {"session_key": 2, "lap_number": 2},
+    ]
+    result = add_race_fraction(rows)
+
+    assert [row["race_fraction"] for row in result] == pytest.approx([0.25, 1.0, 0.5, 1.0])
+
+
+def test_add_race_fraction_empty_rows():
+    with pytest.raises(ValueError):
+        add_race_fraction([])

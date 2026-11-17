@@ -279,3 +279,19 @@ in 2024 only once, then sparse pairs. Or start the Week 5 write-up.
 Still unclear: Why Hungaroring's last 10 laps, Sakhir's first 10 and
 Singapore's early laps are still off. How much of the fuel term is track
 evolution.
+
+## 2026-11-16 Session 17
+
+Done: Added the 2023 editions of the 5 races (Claude fetched, audited and
+cleaned them; new `after_finish` label for untimed laps past the race distance,
+`race_distance`, explicit-year `split_by_year`, `leave_one_year_out`). I wrote
+`cross_year_predictions`. Cross-year (fit one year, score the other, 10,053
+clean laps): B_frac MAE 0.519 s vs C_frac 0.523 s, a tie, but C cuts per-circuit
+bias from -0.12..+0.22 s to within +-0.04 s (Singapore, Sakhir better; Monza worse).
+
+Next: Session 18: partial pooling (shared wear rate plus per-circuit
+adjustments pulled toward it) to keep C's low bias with B's stability. Or
+start the race-total backtest, which is where bias shows up.
+
+Still unclear: Whether C's lower bias actually wins on race totals. Why C is
+worse at Monza. How much 2023-to-2024 car and tyre change is in these numbers.

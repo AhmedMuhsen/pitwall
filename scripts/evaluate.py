@@ -2,7 +2,7 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.parquet as pq
 
-from pitwall.evaluation import leave_one_race_out, score, score_by_group, split_by_year
+from pitwall.evaluation import leave_one_race_out, score, score_by_group, split_by_year, leave_one_year_out
 from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import build_pipeline
 
@@ -68,6 +68,43 @@ def held_out_predictions(include_race_lap, train, fuel_column="lap_number"):
         validation_df = pd.DataFrame(usable)
         frames.append(validation_df.assign(predicted=pipeline.predict(validation_df)))
     return pd.concat(frames, ignore_index=True)
+
+def cross_year_predictions(include_race_lap, wear_by_pair, rows, fuel_column = "race_fraction"):
+    """Clean 2023 and 2024 laps, each predicted by a model fitted on the other year."""
+    frames = []
+    for year, fold_train, fold_validation in leave_one_year_out(rows, [2023, 2024]):
+        pipeline = fit_model(include_race_lap, wear_by_pair, fold_train, fuel_column)
+        usable, _ = scored_rows(fold_validation, "is_clean")
+
+        pairs = training_pairs(fold_train)
+        seen = [row for row in usable if (row['compound'], row['circuit']) in pairs]
+        print(f" held out {year}: dropped {len(usable)- len(seen)} rows, pair not in training")
+        
+        validation_df = pd.DataFrame(seen)
+        frames.append(validation_df.assign(predicted=pipeline.predict(validation_df), held_out_year = year))
+    return pd.concat(frames, ignore_index=True)
+
+
+def print_cross_year(rows):
+    """B_frac (one wear rate) vs C_frac (wear per compound@circuit), fitted on one year, scored on the other."""
+    print("\nCross-year (fit on 2023, score 2024, and the reverse), clean laps")
+    results = {}
+    for name, wear_by_pair in (("B_frac", False), ("C_frac", True)):
+        df = cross_year_predictions(True, wear_by_pair, rows)
+        result = score(df["delta"].tolist(), df["predicted"].tolist())
+        print(
+            f"  {name:<6}  n={len(df):>5}  "
+            f"MAE={result['mae']:.3f}s  RMSE={result['rmse']:.3f}s  bias={result['bias']:+.3f}s"
+        )
+        results[name] = df
+
+    for by in ("held_out_year", "circuit"):
+        tables = [score_by_group(results[name], by)[["mae", "bias"]].add_prefix(f"{name}_")
+                  for name in ("B_frac", "C_frac")]
+        table = pd.concat(tables, axis=1)
+        table["n"] = results["B_frac"].groupby(by).size()
+        print(f"\nCross-year by {by} (seconds)")
+        print(table.round(3).to_string())
 
 
 def print_held_out_2024(train):
@@ -142,6 +179,7 @@ def main():
 
     print_slices(train, test)
     print_held_out_2024(train)
+    print_cross_year(rows)
 
 
 if __name__ == "__main__":

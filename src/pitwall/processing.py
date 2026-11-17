@@ -6,7 +6,7 @@ DATASET_COLUMNS = [
 
 EXCLUSION_REASONS = [
     'lap_1', 'pit_out', 'null_lap_duration', 'safety_car', 'no_stint',
-    'in_lap', 'before_retirement'
+    'in_lap', 'before_retirement', 'after_finish'
 ]
 
 def find_stint(stints: list[dict], driver_number: int, lap_number: int) -> dict | None:
@@ -51,6 +51,18 @@ def has_lap(laps: list[dict], driver_number: int, lap_number: int) -> bool:
             return True
     return False
 
+def race_distance(laps: list[dict]) -> int | None:
+    '''
+    The race distance in laps: the highest lap_number that has a lap_duration.
+    Some 2023 races list one extra lap per finisher after the chequered flag,
+    with no lap_duration, so the highest lap_number alone is one too many.
+    Returns None if no lap has a lap_duration.
+    '''
+    timed = [lap['lap_number'] for lap in laps if lap['lap_duration'] is not None]
+    if not timed:
+        return None
+    return max(timed)
+
 def find_safety_car_disruption_laps(race_control: list[dict]) -> set:
     '''
     Takes in race_control as a list of dicts.
@@ -78,8 +90,11 @@ def exclusion_reasons(lap: dict, stints: list[dict], laps: list[dict], safety_ca
     Returns every reason to exclude one lap, or an empty list if the lap is clean.
     Takes the lap, plus the stints and laps of its race and the safety car affected laps.
     Laps with no matching stint can't be in_lap or before_retirement.
+    A lap past the race distance (see race_distance) is after_finish, and the
+    lap before it is the driver's real last lap, not before_retirement.
     '''
     reasons = []
+    distance = race_distance(laps)
     if lap["lap_number"] == 1:
         reasons.append('lap_1')
     if lap["is_pit_out_lap"]:
@@ -88,6 +103,8 @@ def exclusion_reasons(lap: dict, stints: list[dict], laps: list[dict], safety_ca
         reasons.append('null_lap_duration')
     if lap['lap_number'] in safety_car_laps:
         reasons.append('safety_car')
+    if distance is not None and lap['lap_number'] > distance:
+        reasons.append('after_finish')
     stint = find_stint(stints, lap['driver_number'], lap['lap_number'])
     if stint is None:
         reasons.append('no_stint')
@@ -96,7 +113,7 @@ def exclusion_reasons(lap: dict, stints: list[dict], laps: list[dict], safety_ca
         next_lap_number = lap['lap_number'] + 1
         if find_stint(stints, lap['driver_number'], next_lap_number) is not None:
             reasons.append('in_lap')
-        elif has_lap(laps, lap['driver_number'], next_lap_number):
+        elif has_lap(laps, lap['driver_number'], next_lap_number) and (distance is None or next_lap_number <= distance):
             reasons.append('before_retirement')
     return reasons
 
@@ -118,7 +135,7 @@ def is_racing_lap(reasons: list) -> bool:
 
     '''
     for reason in reasons:
-        if reason in ['safety_car', 'null_lap_duration', 'no_stint', 'in_lap', 'pit_out']:
+        if reason in ['safety_car', 'null_lap_duration', 'no_stint', 'in_lap', 'pit_out', 'after_finish']:
             return False
     return True
 

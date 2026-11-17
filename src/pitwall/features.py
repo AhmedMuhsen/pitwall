@@ -59,23 +59,29 @@ def add_race_fraction(rows: list[dict]) -> list[dict]:
     Adds how far through its race each lap is (a fuel proxy that works
     across races of different lengths).
 
-    rows: list of dicts (dataset rows), each with "session_key" (int) and
-        "lap_number" (int)
+    rows: list of dicts (dataset rows), each with "session_key" (int),
+        "lap_number" (int) and "lap_duration" (float seconds or None)
 
     returns: new list of dicts, each row with "race_fraction" added:
-        lap_number divided by the highest lap_number in that race (the
-        leader's lap count, which is the scheduled race distance and is
-        known before the race). The input rows are not changed.
+        lap_number divided by the race distance, the highest lap_number with
+        a lap_duration in that race (the leader's lap count, which is the
+        scheduled race distance and is known before the race). Laps with no
+        time after the finish (some 2023 races) don't count, and get a
+        fraction above 1. The input rows are not changed.
 
-    raises ValueError if rows is empty.
+    raises ValueError if rows is empty or a race has no lap with a lap_duration.
     '''
     if not rows:
         raise ValueError("Laps list is empty")
-    
+
     race_laps = {}
     for row in rows:
         key = row['session_key']
-        race_laps[key] = max(race_laps.get(key, 0), row['lap_number'])
+        if row['lap_duration'] is not None:
+            race_laps[key] = max(race_laps.get(key, 0), row['lap_number'])
+    no_timed_laps = {row['session_key'] for row in rows} - race_laps.keys()
+    if no_timed_laps:
+        raise ValueError(f"Races with no timed lap: {sorted(no_timed_laps)}")
 
     result = []
     for row in rows:

@@ -11,6 +11,11 @@ OUTPUT_PATH = Path("data/processed/lap_dataset.parquet")
 REPORT_PATH = Path("docs/DATA_QUALITY.md")
 
 SESSIONS = {
+    7953: ("Sakhir", 2023),
+    9133: ("Hungaroring", 2023),
+    9157: ("Monza", 2023),
+    9165: ("Singapore", 2023),
+    9197: ("Yas Marina Circuit", 2023),
     9472: ("Sakhir", 2024),
     9566: ("Hungaroring", 2024),
     9590: ("Monza", 2024),
@@ -35,7 +40,7 @@ def main():
         report[f"{circuit} {year}"] = race_quality(race_rows)
         all_rows.extend(race_rows)
 
-    for total_year in [2024, 2025]:
+    for total_year in [2023, 2024, 2025]:
         year_rows = [row for row in all_rows if row['year'] == total_year]
         report[f"All {total_year}"] = race_quality(year_rows)
     report["All races"] = race_quality(all_rows)

@@ -7,6 +7,11 @@ Do not edit by hand. Clean and racing are defined in `DECISIONS.md`.
 
 | Race | Rows | Duplicate keys | Clean | Racing |
 |---|---:|---:|---:|---:|
+| Sakhir 2023 | 1,058 | 0 | 875 | 897 |
+| Hungaroring 2023 | 1,255 | 0 | 1,158 | 1,180 |
+| Monza 2023 | 968 | 0 | 876 | 898 |
+| Singapore 2023 | 1,091 | 0 | 897 | 917 |
+| Yas Marina Circuit 2023 | 1,159 | 0 | 1,063 | 1,083 |
 | Sakhir 2024 | 1,129 | 0 | 1,024 | 1,043 |
 | Hungaroring 2024 | 1,356 | 0 | 1,254 | 1,274 |
 | Monza 2024 | 1,009 | 0 | 927 | 948 |
@@ -17,14 +22,20 @@ Do not edit by hand. Clean and racing are defined in `DECISIONS.md`.
 | Monza 2025 | 976 | 0 | 916 | 936 |
 | Singapore 2025 | 1,229 | 0 | 1,163 | 1,183 |
 | Yas Marina Circuit 2025 | 1,156 | 0 | 1,082 | 1,102 |
+| All 2023 | 5,531 | 0 | 4,869 | 4,975 |
 | All 2024 | 5,710 | 0 | 5,217 | 5,302 |
 | All 2025 | 5,859 | 0 | 5,382 | 5,483 |
-| All races | 11,569 | 0 | 10,599 | 10,785 |
+| All races | 17,100 | 0 | 15,468 | 15,760 |
 
 ## Missing values
 
 | Race | `date_start` | `lap_duration` | `stint_number` | `tyre_age` | `compound` |
 |---|---:|---:|---:|---:|---:|
+| Sakhir 2023 | 0 | 3 | 3 | 3 | 3 |
+| Hungaroring 2023 | 0 | 3 | 3 | 3 | 3 |
+| Monza 2023 | 0 | 20 | 19 | 19 | 19 |
+| Singapore 2023 | 1 | 8 | 6 | 6 | 6 |
+| Yas Marina Circuit 2023 | 0 | 2 | 2 | 2 | 2 |
 | Sakhir 2024 | 0 | 0 | 0 | 0 | 0 |
 | Hungaroring 2024 | 1 | 2 | 1 | 1 | 1 |
 | Monza 2024 | 0 | 1 | 1 | 1 | 1 |
@@ -35,9 +46,10 @@ Do not edit by hand. Clean and racing are defined in `DECISIONS.md`.
 | Monza 2025 | 0 | 2 | 1 | 1 | 1 |
 | Singapore 2025 | 0 | 0 | 0 | 0 | 0 |
 | Yas Marina Circuit 2025 | 0 | 0 | 0 | 0 | 0 |
+| All 2023 | 1 | 36 | 33 | 33 | 33 |
 | All 2024 | 1 | 9 | 7 | 7 | 7 |
 | All 2025 | 0 | 4 | 3 | 3 | 3 |
-| All races | 1 | 13 | 10 | 10 | 10 |
+| All races | 2 | 49 | 43 | 43 | 43 |
 
 No missing values in: `session_key`, `meeting_key`, `driver_number`, `lap_number`, `is_pit_out_lap`, `circuit`, `year`, `exclusion_reasons`, `is_clean`, `is_racing`.
 
@@ -45,18 +57,24 @@ No missing values in: `session_key`, `meeting_key`, `driver_number`, `lap_number
 
 A lap can have more than one reason, so a row can add up to more than its excluded laps.
 
-| Race | `lap_1` | `pit_out` | `null_lap_duration` | `safety_car` | `no_stint` | `in_lap` | `before_retirement` |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Sakhir 2024 | 20 | 43 | 0 | 0 | 0 | 43 | 0 |
-| Hungaroring 2024 | 20 | 40 | 2 | 0 | 1 | 40 | 1 |
-| Monza 2024 | 20 | 30 | 1 | 0 | 1 | 30 | 1 |
-| Singapore 2024 | 20 | 23 | 2 | 0 | 2 | 23 | 2 |
-| Yas Marina Circuit 2024 | 20 | 28 | 4 | 77 | 3 | 28 | 3 |
-| Sakhir 2025 | 20 | 42 | 1 | 120 | 1 | 42 | 1 |
-| Hungaroring 2025 | 20 | 29 | 1 | 0 | 1 | 29 | 1 |
-| Monza 2025 | 20 | 19 | 2 | 0 | 1 | 19 | 1 |
-| Singapore 2025 | 20 | 23 | 0 | 0 | 0 | 23 | 0 |
-| Yas Marina Circuit 2025 | 20 | 27 | 0 | 0 | 0 | 27 | 0 |
-| All 2024 | 100 | 164 | 9 | 77 | 7 | 164 | 7 |
-| All 2025 | 100 | 140 | 4 | 120 | 3 | 140 | 3 |
-| All races | 200 | 304 | 13 | 197 | 10 | 304 | 10 |
+| Race | `lap_1` | `pit_out` | `null_lap_duration` | `safety_car` | `no_stint` | `in_lap` | `before_retirement` | `after_finish` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Sakhir 2023 | 20 | 50 | 3 | 72 | 3 | 50 | 3 | 0 |
+| Hungaroring 2023 | 20 | 36 | 3 | 0 | 3 | 36 | 3 | 0 |
+| Monza 2023 | 20 | 25 | 20 | 0 | 19 | 25 | 3 | 16 |
+| Singapore 2023 | 19 | 25 | 8 | 159 | 6 | 25 | 3 | 3 |
+| Yas Marina Circuit 2023 | 20 | 37 | 2 | 0 | 2 | 37 | 1 | 1 |
+| Sakhir 2024 | 20 | 43 | 0 | 0 | 0 | 43 | 0 | 0 |
+| Hungaroring 2024 | 20 | 40 | 2 | 0 | 1 | 40 | 1 | 0 |
+| Monza 2024 | 20 | 30 | 1 | 0 | 1 | 30 | 1 | 0 |
+| Singapore 2024 | 20 | 23 | 2 | 0 | 2 | 23 | 2 | 0 |
+| Yas Marina Circuit 2024 | 20 | 28 | 4 | 77 | 3 | 28 | 3 | 0 |
+| Sakhir 2025 | 20 | 42 | 1 | 120 | 1 | 42 | 1 | 0 |
+| Hungaroring 2025 | 20 | 29 | 1 | 0 | 1 | 29 | 1 | 0 |
+| Monza 2025 | 20 | 19 | 2 | 0 | 1 | 19 | 1 | 0 |
+| Singapore 2025 | 20 | 23 | 0 | 0 | 0 | 23 | 0 | 0 |
+| Yas Marina Circuit 2025 | 20 | 27 | 0 | 0 | 0 | 27 | 0 | 0 |
+| All 2023 | 99 | 173 | 36 | 231 | 33 | 173 | 13 | 20 |
+| All 2024 | 100 | 164 | 9 | 77 | 7 | 164 | 7 | 0 |
+| All 2025 | 100 | 140 | 4 | 120 | 3 | 140 | 3 | 0 |
+| All races | 299 | 477 | 49 | 428 | 43 | 477 | 23 | 20 |

@@ -475,3 +475,47 @@ One entry per real decision. Format:
   a 2024 old-tyre bias appearing once more races are added. Also: per-circuit
   wear (Model C) can't be checked by leaving one 2024 race out, so it needs its
   own validation plan.
+
+## 2026-11-16 — Add the 2023 editions of the 5 Grands Prix
+
+- **Decision** — Add Bahrain, Hungary, Monza, Singapore and Abu Dhabi 2023
+  (7953, 9133, 9157, 9165, 9197) to the dataset, to validate per-circuit wear
+  across years without using 2025.
+- **Requirement** — Each circuit is in 2024 only once, so leaving one 2024 race
+  out also leaves its circuit out, and Model C (wear per compound@circuit) can't
+  be scored. 2025 stays the untouched test set.
+- **Options** — (a) Hold out drivers within 2024: no new data, but train and
+  validation share the same races, so it can't see a change between years.
+  (b) Add 2023: a real same-circuit, different-year check, but a scope change
+  (CLAUDE.md names 2024 and 2025) and a fetch, audit and clean. (c) Validate on
+  2025: spends the test set.
+- **Choice and reason** — (b). It tests what the simulator needs: does a
+  circuit's wear rate from one year hold in another. All five are dry with no
+  sprint and pass the join checks (`docs/DATA_AUDIT.md`). `evaluate.py` leaves
+  2023 out until the cross-year split is built. Accepted cost: 2023 cars and
+  tyres differ, and Monza SOFT and Yas Marina SOFT have no 2023 laps.
+- **What would make us reconsider** — 2023-to-2024 differences larger than the
+  per-circuit effects we're trying to measure, so the check says more about the
+  year than the circuit. CLAUDE.md's data and evaluation rules still say 2024
+  and 2025 and need updating to match.
+
+## 2026-11-16 — Race distance is the highest timed lap; laps past it are `after_finish`
+
+- **Decision** — `race_distance(laps)` is the highest `lap_number` with a
+  `lap_duration`. A lap past it gets the reason `after_finish` (not clean, not
+  racing), the lap before it is not `before_retirement`, and `add_race_fraction`
+  divides by the same distance.
+- **Requirement** — Monza, Singapore and Abu Dhabi 2023 list one untimed lap per
+  finisher after the chequered flag. Unhandled, it labels each finisher's real
+  last lap `before_retirement` and makes the race one lap too long for the fuel
+  proxy.
+- **Options** — (a) Highest timed lap: simple, matches the chequered-flag lap in
+  all 15 races. (b) Chequered-flag lap from `race_control`: the official answer,
+  but Monza 2023 has no chequered message. (c) A lap starting after the winner
+  finishes (`date_start`): catches lapped finishers too, but needs date parsing.
+- **Choice and reason** — (a). It catches 20 of the 22 phantom laps with no new
+  data, and changes nothing in 2024 or 2025. A label, not a deletion, as with the
+  other reasons.
+- **What would make us reconsider** — More races where lapped finishers' phantom
+  laps fall inside the race distance (2 laps here, Monza 2023 drivers 20 and 27),
+  then switch to (c). Or a race where the leader's last lap has no time.

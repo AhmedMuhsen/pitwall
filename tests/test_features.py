@@ -83,14 +83,31 @@ def test_pair_age_columns_raises_on_unseen_pair():
 
 def test_add_race_fraction_uses_each_race_length():
     rows = [
-        {"session_key": 1, "lap_number": 1},
-        {"session_key": 1, "lap_number": 4},
-        {"session_key": 2, "lap_number": 1},
-        {"session_key": 2, "lap_number": 2},
+        {"session_key": 1, "lap_number": 1, "lap_duration": 90.0},
+        {"session_key": 1, "lap_number": 4, "lap_duration": 90.0},
+        {"session_key": 2, "lap_number": 1, "lap_duration": 90.0},
+        {"session_key": 2, "lap_number": 2, "lap_duration": 90.0},
     ]
     result = add_race_fraction(rows)
 
     assert [row["race_fraction"] for row in result] == pytest.approx([0.25, 1.0, 0.5, 1.0])
+
+
+def test_add_race_fraction_ignores_untimed_lap_after_finish():
+    rows = [
+        {"session_key": 1, "lap_number": 2, "lap_duration": 90.0},
+        {"session_key": 1, "lap_number": 4, "lap_duration": 90.0},
+        {"session_key": 1, "lap_number": 5, "lap_duration": None},
+    ]
+    result = add_race_fraction(rows)
+
+    assert [row["race_fraction"] for row in result] == pytest.approx([0.5, 1.0, 1.25])
+
+
+def test_add_race_fraction_race_with_no_timed_lap():
+    rows = [{"session_key": 1, "lap_number": 1, "lap_duration": None}]
+    with pytest.raises(ValueError):
+        add_race_fraction(rows)
 
 
 def test_add_race_fraction_empty_rows():

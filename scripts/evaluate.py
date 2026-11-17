@@ -107,6 +107,8 @@ def main():
     # Each race's reference comes from that race's own clean laps (DECISIONS 2026-11-12).
     rows = add_delta(rows, driver_reference_laps(rows))
     rows = add_race_fraction(rows)
+    # 2023 is for cross-year validation of per-circuit wear and isn't used here yet.
+    rows = [row for row in rows if row["year"] != 2023]
     train, test = split_by_year(rows)
     print(f"train (2024): {len(train)} rows, test (2025): {len(test)} rows")
 

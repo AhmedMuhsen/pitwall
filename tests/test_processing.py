@@ -1,5 +1,5 @@
 from pitwall.processing import add_stint_data, count_duplicate_keys
-from pitwall.processing import exclusion_reasons
+from pitwall.processing import exclusion_reasons, race_distance
 from pitwall.processing import find_safety_car_disruption_laps
 from pitwall.processing import add_exclusion_reasons
 from pitwall.processing import is_racing_lap
@@ -107,8 +107,28 @@ def test_last_lap_of_race_is_clean():
 def test_before_retirement():
     lap = {'driver_number': 1, 'lap_number': 4, 'is_pit_out_lap': False, 'lap_duration': 110.5}
     next_lap = {'driver_number': 1, 'lap_number': 5, 'is_pit_out_lap': False, 'lap_duration': None}
-    reasons = exclusion_reasons(lap, STINTS, [lap, next_lap], set())
+    # Another driver finishes lap 5, so the race went on after driver 1 stopped.
+    other = {'driver_number': 44, 'lap_number': 5, 'is_pit_out_lap': False, 'lap_duration': 101.2}
+    reasons = exclusion_reasons(lap, STINTS, [lap, next_lap, other], set())
     assert reasons == ['before_retirement']
+
+def test_lap_after_the_finish():
+    last_lap = {'driver_number': 1, 'lap_number': 4, 'is_pit_out_lap': False, 'lap_duration': 101.2}
+    phantom = {'driver_number': 1, 'lap_number': 5, 'is_pit_out_lap': False, 'lap_duration': None}
+    laps = [last_lap, phantom]
+    assert exclusion_reasons(phantom, STINTS, laps, set()) == ['null_lap_duration', 'after_finish', 'no_stint']
+    assert exclusion_reasons(last_lap, STINTS, laps, set()) == []
+
+def test_race_distance_ignores_untimed_laps():
+    laps = [
+        {'driver_number': 1, 'lap_number': 50, 'lap_duration': 85.0},
+        {'driver_number': 1, 'lap_number': 51, 'lap_duration': 85.2},
+        {'driver_number': 1, 'lap_number': 52, 'lap_duration': None},
+    ]
+    assert race_distance(laps) == 51
+
+def test_race_distance_no_timed_laps():
+    assert race_distance([{'driver_number': 1, 'lap_number': 1, 'lap_duration': None}]) is None
 
 def test_other_drivers_next_lap_is_ignored():
     lap = {'driver_number': 1, 'lap_number': 4, 'is_pit_out_lap': False, 'lap_duration': 101.2}
@@ -211,6 +231,9 @@ def test_lap_1_valid_race_lap():
     reasons = ['lap_1']
     result = is_racing_lap(reasons)
     assert result == True
+
+def test_after_finish_is_not_racing():
+    assert is_racing_lap(['after_finish']) == False
 
 
 def test_building_race_rows():

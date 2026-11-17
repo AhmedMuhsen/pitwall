@@ -1,6 +1,12 @@
 import time
 from pitwall.ingestion import cache_path, load_or_fetch
 SESSIONS = {
+    # 2023: training, cross-year validation of per-circuit wear
+    7953: "Bahrain 2023",
+    9133: "Hungary 2023",
+    9157: "Italy (Monza) 2023",
+    9165: "Singapore 2023",
+    9197: "Abu Dhabi 2023",
     # 2024: training
     9472: "Bahrain 2024",
     9566: "Hungary 2024",
@@ -14,7 +20,7 @@ SESSIONS = {
     9896: "Singapore 2025",
     9839: "Abu Dhabi 2025",
 }
-ENDPOINTS_TO_FETCH = ["laps", "stints", "race_control"]
+ENDPOINTS_TO_FETCH = ["laps", "stints", "race_control", "weather"]
 WAIT_SECONDS = 3
 
 def main():

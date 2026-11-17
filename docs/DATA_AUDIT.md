@@ -679,3 +679,127 @@ counts are unchanged. The 2025 rows use lap numbers and flags only.
 Totals: 2024 has 5,217 clean laps of 5,710, and 2025 has 5,382 of 5,859. The
 safety-car rule removes 54 further laps from Abu Dhabi 2024 and 92 from Bahrain
 2025. The other laps in its window already had another reason.
+
+## 2023 editions of the 5 v1 races (2026-11-16)
+
+Added for a same-circuit, different-year check of per-circuit wear without
+touching 2025 (Session 17). Same steps as 2024 and 2025.
+
+### Requests
+
+- `sessions_2023.json`: `/sessions?year=2023&session_name=Race`, 23 records
+  (Imola 2023 was cancelled, so it is not listed).
+- `sprint_sessions_2023.json`: `/sessions?year=2023&session_name=Sprint`, 6
+  records: Austin, Baku, Interlagos, Lusail, Spa-Francorchamps, Spielberg. None of
+  the 5 v1 circuits had a sprint in 2023.
+- Both fetched with curl, with no sidecar. Laps, stints, race_control and weather
+  were fetched with `scripts/fetch_races.py` through `load_or_fetch` (20
+  requests, 3 s apart, all with `.meta.json` sidecars).
+
+| Session | `session_key` | `circuit_key` | Laps | Stints | Race control | Weather |
+|---|---:|---:|---:|---:|---:|---:|
+| Bahrain 2023 | 7953 | 63 | 1,058 | 70 | 75 | 161 |
+| Hungary 2023 | 9133 | 4 | 1,255 | 56 | 87 | 164 |
+| Italy (Monza) 2023 | 9157 | 39 | 968 | 45 | 45 | 156 |
+| Singapore 2023 | 9165 | 61 | 1,091 | 44 | 76 | 176 |
+| Abu Dhabi 2023 | 9197 | 70 | 1,159 | 57 | 67 | 156 |
+
+`circuit_key` is the same as in 2024 and 2025 for all five.
+
+### Rain and disruptions
+
+- No rain reading in any of the five races, and no red flags.
+- Bahrain 2023: VSC deployed lap 41, ending lap 42 (window 40-43).
+- Singapore 2023: SC deployed lap 20, in this lap 22; VSC deployed lap 44,
+  ending lap 45 (windows 19-23 and 43-46).
+- Hungary, Monza and Abu Dhabi 2023: no SC or VSC.
+- So the backtest could add Hungary, Monza and Abu Dhabi 2023 as undisrupted
+  sessions, if we want them.
+
+### Stints and the join
+
+- No overlapping stints (`find_stint` didn't raise), no repeated
+  (`driver_number`, `lap_number`) pairs, laps in equals laps out in all five.
+- No gaps between stints, every first stint starts on lap 1, and every stint
+  start after the first matches a flagged pit-out lap (and the other way round).
+- Stops per driver: Bahrain 0:1, 2:10, 3:8, 6:1 (driver 4, seven stints,
+  checked: every boundary has a pit-out lap); Hungary 0:2, 2:18; Monza 0:1,
+  1:13, 2:6; Singapore 0:1, 1:11, 2:7; Abu Dhabi 1:3, 2:17.
+- Singapore 2023 has 19 drivers in `/laps`, the others 20.
+- Tyre-age check: driver 1 at Hungary 2023, stint 3 (MEDIUM, laps 52-70, start
+  age 3) is age 21 on lap 70, as the formula gives. Not checked outside OpenF1.
+
+### New in 2023: a phantom lap after the finish
+
+In Monza, Singapore and Abu Dhabi 2023, `/laps` has one lap past the race
+distance for finishers, with no `lap_duration` and no stint. The race distance
+is the chequered-flag lap in `race_control` and the highest lap with a time:
+
+| Race | Chequered flag lap | Highest lap with a time | Highest `lap_number` |
+|---|---:|---:|---:|
+| Monza 2023 | none in race_control | 51 | 52 |
+| Singapore 2023 | 62 | 62 | 63 |
+| Abu Dhabi 2023 | 58 | 58 | 59 |
+
+All other 12 races (2023 Bahrain and Hungary, all 2024 and 2025) have the three
+numbers equal. Monza 2023 was 51 laps, after an aborted start.
+
+Fix (2026-11-16): `race_distance(laps)` in `processing.py` is the highest
+`lap_number` with a `lap_duration`, which matches the chequered-flag lap in all
+15 races. A lap past it gets the new reason `after_finish` (not racing, not
+clean), and the lap before it is no longer `before_retirement`.
+`add_race_fraction` divides by the same race distance. 2024 and 2025 rows are
+unchanged by this.
+
+- 20 laps are `after_finish`: Monza 16, Singapore 3, Yas Marina 1.
+- 2023 `before_retirement` went from 26 to 13 laps, and clean from 4,856 to 4,869.
+- Not caught: lapped finishers whose phantom lap is still within the race
+  distance. Monza 2023 drivers 20 and 27 have an untimed lap 51 that starts at
+  14:43:32, 6 minutes after the winner finished (14:37:04), so their lap 50 is
+  still labelled `before_retirement`. Catching these needs `date_start`
+  parsing. Every other untimed last lap in the 15 races starts before the
+  winner finishes, so they look like real retirements.
+
+### Clean laps per pair, 2023 vs 2024
+
+Drivers with at least one clean lap on the pair, and the highest clean tyre age.
+
+| Pair | 2023 laps / drivers / max age | 2024 laps / drivers / max age |
+|---|---|---|
+| Hungaroring HARD | 723 / 18 / 38 | 821 / 20 / 40 |
+| Hungaroring MEDIUM | 408 / 16 / 42 | 399 / 17 / 30 |
+| Hungaroring SOFT | 27 / 3 / 13 | 34 / 6 / 15 |
+| Monza HARD | 466 / 19 / 38 | 686 / 20 / 42 |
+| Monza MEDIUM | 401 / 19 / 27 | 240 / 19 / 20 |
+| Monza SOFT | none | 1 / 1 / 1 |
+| Sakhir HARD | 488 / 19 / 28 | 731 / 20 / 29 |
+| Sakhir MEDIUM | 8 / 1 / 8 | none |
+| Sakhir SOFT | 379 / 20 / 23 | 293 / 20 / 20 |
+| Singapore HARD | 488 / 18 / 41 | 512 / 17 / 48 |
+| Singapore MEDIUM | 357 / 17 / 41 | 506 / 19 / 36 |
+| Singapore SOFT | 49 / 3 / 21 | 91 / 5 / 30 |
+| Yas Marina HARD | 793 / 20 / 42 | 650 / 19 / 44 |
+| Yas Marina MEDIUM | 269 / 19 / 27 | 229 / 17 / 27 |
+| Yas Marina SOFT | none | 24 / 1 / 23 |
+
+12 pairs are in both years. Monza SOFT and Yas Marina SOFT, the two sparsest
+2024 pairs, have no 2023 laps, so they can't be checked across years.
+
+### Clean lap times
+
+Median clean lap 2023 / 2024: Sakhir 98.41 / 96.89, Hungaroring 84.57 / 84.38,
+Monza 86.96 / 84.86, Singapore 100.41 / 98.53, Yas Marina 90.25 / 89.65 s. The
+delta target removes these level differences.
+
+Slowest clean 2023 lap: Singapore driver 23 lap 58, 117.96 s on a 14-lap MEDIUM,
+next to the Pérez-Albon collision (race control lap 59). It's an incident lap,
+which the rules deliberately don't filter (local yellows aren't a reason). Left
+in, noted.
+
+### Counts
+
+From `docs/DATA_QUALITY.md` after `scripts/build_dataset.py`: 2023 has 5,531
+rows, 4,869 clean and 4,975 racing (after the `after_finish` fix), with 0
+duplicate keys. The 2024 and 2025
+rows in the rebuilt Parquet file are identical to before, and
+`scripts/evaluate.py` gives the same output (it now leaves 2023 out).

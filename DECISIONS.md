@@ -521,3 +521,41 @@ One entry per real decision. Format:
 - **What would make us reconsider** — More races where lapped finishers' phantom
   laps fall inside the race distance (2 laps here, Monza 2023 drivers 20 and 27),
   then switch to (c). Or a race where the leader's last lap has no time.
+
+## 2026-11-16 — Per-circuit wear by partial pooling; alpha chosen in the backtest
+
+- **Decision** — Add `PooledWearModel` in `model.py`: one shared wear rate plus
+  a per compound@circuit adjustment, fitted in one go by solving
+  `(XᵀX + alpha·D) b = Xᵀy`, where `D` penalises only the adjustment columns.
+  `numpy` is now a declared dependency for this. No `alpha` is chosen yet:
+  several values (1e3 to 1e6) go into the race-total backtest, and the choice
+  is made there.
+- **Requirement** — Cross-year (2023 vs 2024): B (one rate) has per-circuit bias
+  from -0.12 to +0.22 s/lap, and C (a rate per pair) removes it but gives thin
+  pairs implausible rates (2024 SOFT@Monza, 1 lap: -0.39 s/lap, i.e. getting
+  steadily faster over the whole stint). Warm-up over the first laps is
+  plausible, but a linear model can't represent it.
+- **Options** — (a) Two steps: fit B, then Ridge on B's errors with only the
+  per-pair columns. (b) One sklearn `Ridge` with the unpenalised columns scaled
+  up so their penalty is negligible. (b′) Solve the selectively penalised
+  equations directly with numpy. (c) A mixed model with `statsmodels`.
+- **Choice and reason** — (b′). (a) failed its own synthetic test: with B's
+  compound offsets and shared rate frozen, step 2 recovered only about a quarter
+  of a true 0.10 s/lap rate difference (MEDIUM came out at 0.115 against a true
+  0.150), even with almost no penalty. (b′) recovered 0.149, keeps the penalty
+  explicit, and gives coefficients in normal units. (b) does the same through a
+  scale-factor trick, and (c) adds a dependency and a second model interface.
+  `alpha` must be > 0, because the shared `tyre_age` column is the sum of the
+  per-pair columns.
+- **Why alpha waits for the backtest** — Cross-year lap MAE is flat across every
+  alpha (0.518 to 0.523 s, B 0.519, C 0.523), while the spread of circuit bias
+  goes steadily from C's 0.08 s to B's 0.34 s as alpha grows. Lap error mostly
+  cancels over a race, and bias adds up, so race totals are the test that can
+  choose. Also, the thin pairs that pooling exists for (Monza SOFT, Yas Marina
+  SOFT, Sakhir MEDIUM) appear in only one of 2023 and 2024, so cross-year scoring
+  can't see them. At alpha 1e4, 2024 SOFT@Monza is pulled to the shared rate
+  (+0.068), while Sakhir SOFT keeps its own (+0.088).
+- **What would make us reconsider** — The backtest not separating the alphas
+  either (then pick on bias spread and plausibility of the thin-pair rates), or
+  residuals by tyre age showing curvature (warm-up, a cliff) that a linear rate
+  can't fit.

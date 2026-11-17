@@ -4,12 +4,16 @@ import pyarrow.parquet as pq
 
 from pitwall.evaluation import leave_one_race_out, score, score_by_group, split_by_year, leave_one_year_out
 from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
-from pitwall.model import build_pipeline
+from pitwall.model import PooledWearModel, build_pipeline
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")
 # Tyre-age buckets for the error slices: 0-9, 10-19, 20-29, 30+ laps.
 AGE_BINS = [-1, 9, 19, 29, float("inf")]
 AGE_LABELS = ["0-9", "10-19", "20-29", "30+"]
+
+# Penalty strengths tried for PooledWearModel; chosen on the cross-year split, never on 2025.
+# A 400-lap pair has a sum of squared tyre ages near 1e5, so the useful range is about 1e3-1e6.
+POOLING_ALPHAS = [1_000, 10_000, 100_000, 1_000_000]
 
 LAP_BINS = [0, 10, 20, 30, 40, 50, 60, 70]
 LAP_LABELS = ["1-10", "11-20", "21-30", "31-40", "41-50", "51-60", "61-70"]
@@ -27,11 +31,15 @@ def zero_baseline(rows):
     predicted = [0.0] * len(actual)
     return score(actual, predicted)
 
-def fit_model(include_race_lap: bool, wear_by_pair: bool, train, fuel_column="lap_number"):
+def fit_model(include_race_lap: bool, wear_by_pair: bool, train, fuel_column="lap_number", pooling_alpha=None):
+    """Fitted on the clean rows of train. With pooling_alpha set, a PooledWearModel instead (other flags ignored)."""
     usable_rows, _ = scored_rows(train, "is_clean")
     train_df = pd.DataFrame(usable_rows)
 
-    pipeline = build_pipeline(include_race_lap, wear_by_pair, fuel_column)
+    if pooling_alpha is None:
+        pipeline = build_pipeline(include_race_lap, wear_by_pair, fuel_column)
+    else:
+        pipeline = PooledWearModel(pooling_alpha, fuel_column)
     pipeline.fit(train_df, train_df['delta'])
 
     return pipeline
@@ -69,11 +77,11 @@ def held_out_predictions(include_race_lap, train, fuel_column="lap_number"):
         frames.append(validation_df.assign(predicted=pipeline.predict(validation_df)))
     return pd.concat(frames, ignore_index=True)
 
-def cross_year_predictions(include_race_lap, wear_by_pair, rows, fuel_column = "race_fraction"):
+def cross_year_predictions(include_race_lap, wear_by_pair, rows, fuel_column = "race_fraction", pooling_alpha=None):
     """Clean 2023 and 2024 laps, each predicted by a model fitted on the other year."""
     frames = []
     for year, fold_train, fold_validation in leave_one_year_out(rows, [2023, 2024]):
-        pipeline = fit_model(include_race_lap, wear_by_pair, fold_train, fuel_column)
+        pipeline = fit_model(include_race_lap, wear_by_pair, fold_train, fuel_column, pooling_alpha)
         usable, _ = scored_rows(fold_validation, "is_clean")
 
         pairs = training_pairs(fold_train)
@@ -86,11 +94,12 @@ def cross_year_predictions(include_race_lap, wear_by_pair, rows, fuel_column = "
 
 
 def print_cross_year(rows):
-    """B_frac (one wear rate) vs C_frac (wear per compound@circuit), fitted on one year, scored on the other."""
+    """B_frac (one wear rate), C_frac (wear per compound@circuit) and pooled (P_<alpha>), fitted on one year, scored on the other."""
     print("\nCross-year (fit on 2023, score 2024, and the reverse), clean laps")
     results = {}
-    for name, wear_by_pair in (("B_frac", False), ("C_frac", True)):
-        df = cross_year_predictions(True, wear_by_pair, rows)
+    models = [("B_frac", False, None), ("C_frac", True, None)] + [(f"P_{a}", False, a) for a in POOLING_ALPHAS]
+    for name, wear_by_pair, alpha in models:
+        df = cross_year_predictions(True, wear_by_pair, rows, pooling_alpha=alpha)
         result = score(df["delta"].tolist(), df["predicted"].tolist())
         print(
             f"  {name:<6}  n={len(df):>5}  "
@@ -99,12 +108,11 @@ def print_cross_year(rows):
         results[name] = df
 
     for by in ("held_out_year", "circuit"):
-        tables = [score_by_group(results[name], by)[["mae", "bias"]].add_prefix(f"{name}_")
-                  for name in ("B_frac", "C_frac")]
-        table = pd.concat(tables, axis=1)
-        table["n"] = results["B_frac"].groupby(by).size()
-        print(f"\nCross-year by {by} (seconds)")
-        print(table.round(3).to_string())
+        for metric in ("mae", "bias"):
+            table = pd.concat({name: score_by_group(df, by)[metric] for name, df in results.items()}, axis=1)
+            table["n"] = results["B_frac"].groupby(by).size()
+            print(f"\nCross-year {metric} by {by} (seconds)")
+            print(table.round(3).to_string())
 
 
 def print_held_out_2024(train):

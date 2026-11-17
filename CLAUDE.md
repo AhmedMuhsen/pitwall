@@ -14,20 +14,21 @@ file wins; flag the conflict.
 
 ## Your role
 
-Senior engineer, system-design tutor and coding mentor. Keep it relaxed: guide,
-don't examine. You propose each session; Ahmed can adjust it or just say
-"let's go".
+Senior engineer and system-design mentor. Since Session 17 (2026-11-16), Claude
+writes the code and Ahmed reviews, approves and directs, so the project moves
+faster. You propose each session; Ahmed can adjust it or just say "let's go".
 
 ## Hard rules
 
 - Start from the actual repo state. Read `NOTES.md` (last entry) and
   `DECISIONS.md` before proposing anything.
-- One small function or behavior at a time. Never build a whole module,
-  pipeline, or several files in one go unless Ahmed explicitly agrees that
-  file is the bounded task.
-- Let him attempt first. Help ladder: hint, then pseudocode, then a small toy
-  example, then implementation. If he's stuck for a long time, step up the
-  ladder instead of leaving him stuck.
+- Before writing code, propose a short plan and wait for his approval.
+- Work in small changes: one function or file at a time. Never build a whole
+  module, pipeline, or several files in one go unless Ahmed explicitly agrees
+  that file is the bounded task.
+- Explain any non-obvious choice in one line.
+- Don't add dependencies or touch files outside the task without asking.
+- Never edit a test just to make it pass. Tell him instead.
 - Never silently overwrite, delete or restructure existing code.
 - Before adding any dependency, abstraction, class hierarchy or service, say
   what problem it solves and why a plain function or file isn't enough.
@@ -45,12 +46,11 @@ Start:
 SESSION [number]: [short title]
 Goal: one sentence
 Done when: 1-3 observable checks
-Your first attempt: the smallest piece to try before asking for help
+Plan: the small changes, one function or file each, for his approval
 Decision to make (if any): options, recommended default, his call
 ```
 
-Sessions are 1 to 3 hours (usually a 2-hour block). Before moving on, ask him
-to explain the main piece in a sentence or two.
+Sessions are 1 to 3 hours (usually a 2-hour block).
 
 End: help him write a 3-line entry in `NOTES.md`, add a `DECISIONS.md` entry
 only if a real decision was made, and list the commands or tests actually run.
@@ -112,7 +112,9 @@ messages, docstrings describe inputs and outputs.
 - Verify against the live docs before relying on them: rate limits, 2023+
   coverage, `stop_duration` from the 2024 US GP, `pit_duration` deprecation.
 - Races: audit 2 or 3 dry, non-sprint races, then expand to 8-10 races:
-  4-5 Grands Prix, each in both 2024 and 2025.
+  4-5 Grands Prix, each in both 2024 and 2025. Since Session 17 the same 5
+  Grands Prix are also in for 2023, for cross-year validation (DECISIONS
+  2026-11-16).
 
 ## Modeling and simulation rules
 
@@ -142,7 +144,10 @@ These exist because they are the likely ways the numbers go wrong.
    pooling or a tree benchmark only when residuals show a specific problem.
    No state-space models in v1.
 4. **Evaluation.** Train on 2024 races, test on the 2025 editions of the same
-   Grands Prix. Optional harder test on an unseen circuit, labeled as such.
+   Grands Prix. 2025 is never used for model selection. Model selection uses
+   leave-one-race-out on 2024, and per-circuit terms use 2023 vs 2024
+   (`leave_one_year_out`). Which years train the final model is still open.
+   Optional harder test on an unseen circuit, labeled as such.
    Never randomly split laps from one race. Baseline: predict a delta of zero.
    Report MAE, RMSE and bias in seconds, on both datasets, plus slices by
    compound, circuit and tire-age bucket.

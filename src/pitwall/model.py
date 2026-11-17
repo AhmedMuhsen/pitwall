@@ -1,8 +1,9 @@
+import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.linear_model import LinearRegression
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
 
 from pitwall.features import pair_age_columns
 
@@ -76,3 +77,58 @@ def build_pipeline(include_race_lap: bool, wear_by_pair: bool = False, fuel_colu
     return full_pipeline
 
 
+class PooledWearModel(BaseEstimator, RegressorMixin):
+    '''
+    One shared wear rate plus a per compound@circuit adjustment that is pulled
+    toward 0 (partial pooling), all fitted together.
+
+    Columns: one-hot compound (these act as the intercept), tyre_age (the
+    shared rate), fuel_column, and one "age:<pair>" column per pair
+    (PairAgeColumns, the adjustments). fit solves the ridge equations
+    (XᵀX + alpha·D) b = Xᵀy, where D is 1 for the adjustment columns and 0
+    for the rest, so only the adjustments are penalised and the fuel term,
+    compound offsets and shared rate are free to move with them.
+    predict: X times the fitted coefficients.
+
+    alpha: penalty strength, must be > 0. Near 0 gives each pair its own rate
+        (Model C); very large forces every adjustment to 0 (Model B). A pair
+        with few laps is pulled toward the shared rate more than a pair with
+        many.
+    fuel_column: fuel-proxy column, "race_fraction" (default) or "lap_number"
+
+    Expects a DataFrame with "compound", "circuit", "tyre_age" and
+    fuel_column. fit raises ValueError if alpha <= 0. Predicting raises
+    ValueError for a compound or a compound@circuit pair not seen during fitting.
+    '''
+
+    def __init__(self, alpha: float = 1.0, fuel_column: str = "race_fraction"):
+        self.alpha = alpha
+        self.fuel_column = fuel_column
+
+    def fit(self, X, y):
+        # tyre_age equals the sum of the age:pair columns, so the fit needs alpha > 0 to have one answer.
+        if self.alpha <= 0:
+            raise ValueError(f"alpha must be > 0, got {self.alpha}")
+        self.columns_ = ColumnTransformer(
+            transformers=[
+                ("cat", OneHotEncoder(handle_unknown='error', sparse_output=False), ['compound']),
+                ("pass", "passthrough", ['tyre_age', self.fuel_column]),
+                ("wear", PairAgeColumns(), ['compound', 'circuit', 'tyre_age']),
+            ],
+            remainder="drop",
+        )
+        features = np.asarray(self.columns_.fit_transform(X), dtype=float)
+        names = self.columns_.get_feature_names_out()
+        penalised = np.array([name.startswith("wear__") for name in names], dtype=float)
+        lhs = features.T @ features + self.alpha * np.diag(penalised)
+        self.coef_ = np.linalg.solve(lhs, features.T @ np.asarray(y, dtype=float))
+        return self
+
+    def predict(self, X):
+        return np.asarray(self.columns_.transform(X), dtype=float) @ self.coef_
+
+    def pair_adjustments(self) -> dict[str, float]:
+        '''Fitted adjustment to the shared wear rate per pair, in seconds per lap of tyre age.'''
+        names = self.columns_.get_feature_names_out()
+        return {name.removeprefix("wear__age:"): float(c)
+                for name, c in zip(names, self.coef_) if name.startswith("wear__")}

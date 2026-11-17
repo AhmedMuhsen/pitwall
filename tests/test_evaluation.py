@@ -1,5 +1,5 @@
 import pytest
-from pitwall.evaluation import score, split_by_year, score_by_group, leave_one_race_out
+from pitwall.evaluation import score, split_by_year, score_by_group, leave_one_race_out, leave_one_year_out
 import math
 import pandas as pd
 
@@ -37,7 +37,7 @@ def test_normal_case():
         {'year': 2025},
         {'year': 2025},
     ]
-    train, test = split_by_year(rows)
+    train, test = split_by_year(rows, [2024], [2025])
 
     assert len(train) == 4
     assert len(test) == 3
@@ -46,12 +46,45 @@ def test_normal_case():
 
 
 def test_failure_case():
-
+    # Only 2023 rows, so the requested 2024 and 2025 have none.
     rows = [
         {'year': 2023}
     ]
     with pytest.raises(ValueError):
-        train, test = split_by_year(rows)
+        train, test = split_by_year(rows, [2024], [2025])
+
+def test_split_by_year_leaves_other_years_out():
+    rows = [{'year': 2023}, {'year': 2024}, {'year': 2025}]
+    train, test = split_by_year(rows, [2023], [2024])
+
+    assert train == [{'year': 2023}]
+    assert test == [{'year': 2024}]
+
+def test_split_by_year_overlapping_years():
+    rows = [{'year': 2023}, {'year': 2024}]
+    with pytest.raises(ValueError):
+        split_by_year(rows, [2023, 2024], [2024])
+
+def test_leave_one_year_out_holds_out_each_year_once():
+    rows = [
+        {'year': 2023, 'lap_number': 1},
+        {'year': 2024, 'lap_number': 1},
+        {'year': 2024, 'lap_number': 2},
+        {'year': 2025, 'lap_number': 1},
+    ]
+    splits = leave_one_year_out(rows, [2024, 2023])
+
+    assert [year for year, _, _ in splits] == [2023, 2024]
+    year, train, validation = splits[0]
+    assert train == [{'year': 2024, 'lap_number': 1}, {'year': 2024, 'lap_number': 2}]
+    assert validation == [{'year': 2023, 'lap_number': 1}]
+    year, train, validation = splits[1]
+    assert train == [{'year': 2023, 'lap_number': 1}]
+    assert validation == [{'year': 2024, 'lap_number': 1}, {'year': 2024, 'lap_number': 2}]
+
+def test_leave_one_year_out_needs_two_years():
+    with pytest.raises(ValueError):
+        leave_one_year_out([{'year': 2024}], [2024])
 
 def test_score_by_group_scores_each_group():
     df = pd.DataFrame({

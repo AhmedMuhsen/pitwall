@@ -107,9 +107,8 @@ def main():
     # Each race's reference comes from that race's own clean laps (DECISIONS 2026-11-12).
     rows = add_delta(rows, driver_reference_laps(rows))
     rows = add_race_fraction(rows)
-    # 2023 is for cross-year validation of per-circuit wear and isn't used here yet.
-    rows = [row for row in rows if row["year"] != 2023]
-    train, test = split_by_year(rows)
+    # 2023 rows are left out here; they're for cross-year validation (leave_one_year_out).
+    train, test = split_by_year(rows, [2024], [2025])
     print(f"train (2024): {len(train)} rows, test (2025): {len(test)} rows")
 
     # No 2024 wear rate exists for these pairs, so every model skips them (DECISIONS 2026-11-13).

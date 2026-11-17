@@ -48,22 +48,31 @@ def score_by_group(df: pd.DataFrame, by: str) -> pd.DataFrame:
         return pd.Series(result)
     return df.groupby(by).apply(group_scores)
 
-def split_by_year(rows: list[dict]) -> (list[dict], list[dict]):
+def split_by_year(rows: list[dict], train_years: list[int], test_years: list[int]) -> tuple[list[dict], list[dict]]:
     '''
-    Takes in race rows
-    Splits by year (2024 -> train, 2025 -> test)
-    Raises a ValueError if we get a race not in 2024 or 2025
-    Returns train & test
+    Splits rows into train and test by race year.
+
+    rows: list of dicts (dataset rows), each with "year" (int)
+    train_years, test_years: years for each side, e.g. [2024] and [2025] for
+        the test split, or [2023] and [2024] for cross-year validation
+
+    returns: (train_rows, test_rows). Rows from any other year are left out, so
+        a validation split on [2023] and [2024] can never contain 2025.
+
+    raises ValueError if the two year lists overlap or either is empty, or if a
+    requested year has no rows (a missing race would otherwise go unnoticed).
     '''
-    train = []
-    test = []
-    for r in rows:
-        if r['year'] == 2024:
-            train.append(r)
-        elif r['year'] == 2025:
-            test.append(r)
-        else:
-            raise ValueError(f'Unexpected race year: {r['year']}')
+    if not train_years or not test_years:
+        raise ValueError("train_years and test_years must both name at least one year")
+    overlap = set(train_years) & set(test_years)
+    if overlap:
+        raise ValueError(f"Years in both train and test: {sorted(overlap)}")
+    missing = (set(train_years) | set(test_years)) - {r['year'] for r in rows}
+    if missing:
+        raise ValueError(f"No rows for year(s): {sorted(missing)}")
+
+    train = [r for r in rows if r['year'] in train_years]
+    test = [r for r in rows if r['year'] in test_years]
     return train, test
 
 def leave_one_race_out(rows: list[dict]) -> list[tuple[int, list[dict], list[dict]]]:
@@ -89,4 +98,33 @@ def leave_one_race_out(rows: list[dict]) -> list[tuple[int, list[dict], list[dic
         validation = [row for row in rows if row['session_key'] == key]
         train = [row for row in rows if row['session_key'] != key]
         splits.append((key, train, validation))
+    return splits
+
+def leave_one_year_out(rows: list[dict], years: list[int]) -> list[tuple[int, list[dict], list[dict]]]:
+    '''
+    One (train, validation) split per year, holding that year out.
+
+    Every circuit appears once per year, so unlike leave_one_race_out the
+    validation races' circuits are also in training, in another year. This is
+    what lets per-circuit wear (Model C) be scored.
+
+    rows: list of dicts (dataset rows), each with "year" (int)
+    years: the years to use, e.g. [2023, 2024]. Rows from other years (2025,
+        the test set) are left out of every split.
+
+    returns: list of (validation_year, train_rows, validation_rows), one per
+        year in sorted order. train_rows are the other years' rows.
+
+    raises ValueError if fewer than 2 years are given, or a year has no rows
+    (see split_by_year).
+    '''
+    years = sorted(set(years))
+    if len(years) < 2:
+        raise ValueError(f'Need at least 2 years, got {years}')
+
+    splits = []
+    for year in years:
+        others = [y for y in years if y != year]
+        train, validation = split_by_year(rows, others, [year])
+        splits.append((year, train, validation))
     return splits

@@ -491,8 +491,10 @@ One entry per real decision. Format:
   2025: spends the test set.
 - **Choice and reason** — (b). It tests what the simulator needs: does a
   circuit's wear rate from one year hold in another. All five are dry with no
-  sprint and pass the join checks (`docs/DATA_AUDIT.md`). `evaluate.py` leaves
-  2023 out until the cross-year split is built. Accepted cost: 2023 cars and
+  sprint and pass the join checks (`docs/DATA_AUDIT.md`). `split_by_year` now
+  takes the years explicitly and leaves other years out, and
+  `leave_one_year_out(rows, [2023, 2024])` gives the cross-year splits, so 2025
+  can't enter validation. Accepted cost: 2023 cars and
   tyres differ, and Monza SOFT and Yas Marina SOFT have no 2023 laps.
 - **What would make us reconsider** — 2023-to-2024 differences larger than the
   per-circuit effects we're trying to measure, so the check says more about the

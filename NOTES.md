@@ -295,3 +295,34 @@ start the race-total backtest, which is where bias shows up.
 
 Still unclear: Whether C's lower bias actually wins on race totals. Why C is
 worse at Monza. How much 2023-to-2024 car and tyre change is in these numbers.
+
+## 2026-11-16 Session 18
+
+Done: Working mode changed: Claude writes the code after I approve a short
+plan (CLAUDE.md updated, plus 2023 in its data and evaluation rules).
+`PooledWearModel` in `model.py`: shared wear rate plus per-pair adjustments,
+only the adjustments penalised, solved with numpy. The two-step version failed
+its synthetic test (frozen offsets), so we fit everything jointly. Cross-year MAE
+is flat across alpha (0.518-0.523 s) while circuit bias spread goes from C's
+0.08 s to B's 0.34 s.
+
+Next: Session 19: simulator core (sum predicted lap times over a strategy, tyre
+age resets at stops, fuel doesn't), then the race-total backtest of B, C and
+pooled alphas to choose alpha.
+
+Still unclear: Whether race totals separate the alphas. Whether warm-up or a
+cliff shows up as curvature in residuals by tyre age.
+
+## 2026-11-17 Session 19
+
+Done: Simulator core in simulator.py: strategy_laps (strategy -> lap table; tyre
+age resets at a stop, race_fraction doesn't; pit on lap N = new set from N+1)
+and simulate (reference lap + predicted delta per lap, plus stops × pit_loss).
+Hand-calculated 6-lap example matches (505.4 s). Real Hungaroring 2024 2-stops
+through Model B with no pit loss: actual minus predicted is 21-44 s per stop.
+
+Next: Session 20: strategy validation (rule 6: two dry compounds, pit laps in
+range and in order, observed-range guard) and pit loss per circuit from the data.
+
+Still unclear: How the 21-44 s gap splits into pit loss, lap 1 and traffic.
+Which years the observed-range guard should use.

@@ -559,3 +559,19 @@ One entry per real decision. Format:
   either (then pick on bias spread and plausibility of the thin-pair rates), or
   residuals by tyre age showing curvature (warm-up, a cliff) that a linear rate
   can't fit.
+
+## 2026-11-17 — A strategy is a plain dict; pit on lap N means a new set from lap N+1
+
+- **Decision** — A strategy is `{"compounds": [...], "pit_laps": [...],
+  "start_ages": [...]}`, with `start_ages` optional (default all 0, new sets).
+  Lap N is the in-lap on the old set; lap N+1 is the new set's first lap at its
+  start age, the same convention as the dataset's `tyre_age`.
+- **Requirement** — Plan Week 6 task 1; CLAUDE.md: a strategy is a small
+  explicit structure, agent-ready.
+- **Options** — (a) Plain dict. (b) Frozen dataclass. (c) List of stints with
+  lengths instead of pit laps.
+- **Choice and reason** — (a). Matches the list-of-dicts style and is already
+  JSON for Phase 2. `start_ages` is there because the backtest replays real
+  strategies on used sets (12 of 60 Hungary 2024 stints).
+- **What would make us reconsider** — Validation code repeatedly checking the
+  same shape errors that a dataclass would catch at construction.

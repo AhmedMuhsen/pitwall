@@ -75,9 +75,11 @@ simulate and compare a few strategies, show them in Streamlit, with tests,
 README, limitations and a deployed demo.
 
 Out of scope for v1: reinforcement learning, neural networks for show, live
-data, multi-car traffic or overtaking simulation, chatbots, RAG, agents, LLMs,
-microservices, queues, a database, a polished frontend, any claim of finding
-the optimal strategy.
+data, multi-car traffic or overtaking simulation (planned for v2 after the
+Definition of Done: one car against the replayed real field, plus real safety
+cars replayed; random safety cars stay out; DECISIONS 2026-11-18), chatbots,
+RAG, agents, LLMs, microservices, queues, a database, a polished frontend, any
+claim of finding the optimal strategy.
 
 Phase 2 (agent that answers what-if questions by calling the simulator as a
 tool, with an eval set) starts only after the Definition of Done in the plan

@@ -1,5 +1,8 @@
 """Real strategies run through the simulator, compared with the real race times (rule 8)."""
 from collections import defaultdict
+from statistics import median
+
+import pandas as pd
 
 from pitwall.features import driver_reference_laps
 from pitwall.processing import race_distance
@@ -137,3 +140,95 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
                       components=error_components(laps, result["laps"], strategy["pit_laps"], pit_loss))
         records.append(record)
     return records
+
+
+def second_half_record(driver_rows: list[dict], model, race_distance: int, pit_loss: float,
+                       max_ages: dict, min_clean_laps: int = 5) -> dict:
+    '''
+    One car's second half of a race: real time vs the simulator's, with the car's
+    pace taken only from the first half (so the scored laps never set the pace).
+
+    driver_rows: the car's dataset rows in one safety-car-free race, with a
+        lap_duration on every lap 1..race_distance; columns as in
+        actual_strategy plus "lap_duration", "is_clean", "race_fraction",
+        "circuit", "year", "session_key" and "driver_number"
+    model: fitted model, predict(DataFrame) -> delta in seconds; fitted
+        without this race's year
+    race_distance: laps in the race; the first half is laps 1..race_distance // 2
+    pit_loss, max_ages: as in simulator.simulate
+    min_clean_laps: fewest first-half clean laps to estimate the pace from
+
+    returns: dict with "session_key", "circuit", "year", "driver_number",
+    "strategy" (actual_strategy), "pace" (median over first-half clean laps of
+    lap_duration minus the model's predicted delta, seconds), "scored_laps"
+    (laps in the second half), "real" (real second-half time), "predicted"
+    (simulated second-half time from that pace, plus pit_loss for each stop in
+    the second half), "stops" (stops in the second half), "pit_loss" and
+    "skip_reason" ("too_few_first_half_laps" or "cannot_simulate: <message>";
+    then pace, real and predicted are None).
+    '''
+    laps = sorted((r for r in driver_rows if r["lap_number"] <= race_distance), key=lambda r: r["lap_number"])
+    first = laps[0]
+    half = race_distance // 2
+    strategy = actual_strategy(laps)
+    stops = sum(1 for p in strategy["pit_laps"] if p > half)
+    record = {"session_key": first["session_key"], "circuit": first["circuit"], "year": first["year"],
+              "driver_number": first["driver_number"], "strategy": strategy, "pace": None,
+              "scored_laps": race_distance - half, "real": None, "predicted": None, "stops": stops,
+              "pit_loss": pit_loss, "skip_reason": None}
+    clean_first = pd.DataFrame([r for r in laps if r["lap_number"] <= half and r["is_clean"]])
+    if len(clean_first) < min_clean_laps:
+        record["skip_reason"] = "too_few_first_half_laps"
+        return record
+    pace = float(median(clean_first["lap_duration"] - model.predict(clean_first)))
+    try:
+        # Lap 1 is never scored here, so its standing-start loss doesn't matter.
+        sim = simulate(strategy, race_distance, first["circuit"], model, pace, pit_loss, 0.0, max_ages)
+    except ValueError as e:
+        record["skip_reason"] = f"cannot_simulate: {e}"
+        return record
+    second = sim["laps"]["lap_number"] > half
+    record.update(pace=pace, real=sum(r["lap_duration"] for r in laps if r["lap_number"] > half),
+                  predicted=float(sim["laps"].loc[second, "lap_time"].sum()) + stops * pit_loss)
+    return record
+
+
+def strategy_pair_errors(records: list[dict], same_within: int = 3) -> list[dict]:
+    '''
+    Predicted vs real second-half gap between every two cars in the same race
+    that ran different strategies, with each car's own pace taken out.
+
+    records: second_half_record results; skipped ones are left out
+    same_within: two strategies with the same compounds and every pit lap
+        within this many laps count as the same strategy and aren't paired
+
+    returns: one dict per pair with "session_key", "circuit", "year", "car_a",
+    "car_b" and, all in seconds for the second half (a minus b, positive = a slower):
+        "real": real gap minus the pace gap ((pace_a - pace_b) * scored_laps),
+            the part of the real gap that pace doesn't explain
+        "predicted": the simulator's gap minus the same pace gap
+        "stops_only": a baseline that only counts second-half stops:
+            (stops_a - stops_b) * pit_loss
+        "error": predicted minus real
+    '''
+    by_race = defaultdict(list)
+    for record in records:
+        if record["skip_reason"] is None:
+            by_race[record["session_key"]].append(record)
+    pairs = []
+    for race in by_race.values():
+        race = sorted(race, key=lambda r: r["driver_number"])
+        for i, a in enumerate(race):
+            for b in race[i + 1:]:
+                sa, sb = a["strategy"], b["strategy"]
+                if sa["compounds"] == sb["compounds"] and all(
+                        abs(x - y) <= same_within for x, y in zip(sa["pit_laps"], sb["pit_laps"])):
+                    continue
+                pace_gap = (a["pace"] - b["pace"]) * a["scored_laps"]
+                real = (a["real"] - b["real"]) - pace_gap
+                predicted = (a["predicted"] - b["predicted"]) - pace_gap
+                pairs.append({"session_key": a["session_key"], "circuit": a["circuit"], "year": a["year"],
+                              "car_a": a["driver_number"], "car_b": b["driver_number"], "real": real,
+                              "predicted": predicted, "stops_only": (a["stops"] - b["stops"]) * a["pit_loss"],
+                              "error": predicted - real})
+    return pairs

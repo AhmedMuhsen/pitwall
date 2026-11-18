@@ -1,7 +1,8 @@
 import pandas as pd
 import pytest
 
-from pitwall.backtest import actual_strategy, backtest_race, error_components
+from pitwall.backtest import (actual_strategy, backtest_race, error_components, second_half_record,
+                              strategy_pair_errors)
 
 
 class StubModel:
@@ -137,3 +138,61 @@ def test_backtest_race_components_add_up_to_error():
 
     parts = record["components"]
     assert parts["lap_one"] + parts["stops"] + parts["normal"] == pytest.approx(record["error"])
+
+
+MAX_AGES_X = {("X", "MEDIUM"): 50, ("X", "HARD"): 50}
+
+
+def half_lap(lap, duration, stint, compound, age, clean=True):
+    return {**race_lap(1, lap, duration, stint, compound, age, clean), "race_fraction": lap / 4}
+
+
+def test_second_half_record_hand_example():
+    # 4 laps; first half = laps 1-2. MEDIUM laps 1-2 (ages 0, 1), pit on lap 2, HARD laps 3-4 (ages 0, 1).
+    laps = [half_lap(1, 105.0, 1, "MEDIUM", 0), half_lap(2, 100.0, 1, "MEDIUM", 1),
+            half_lap(3, 99.0, 2, "HARD", 0), half_lap(4, 101.0, 2, "HARD", 1)]
+
+    result = second_half_record(laps, StubModel(), 4, pit_loss=20.0, max_ages=MAX_AGES_X, min_clean_laps=2)
+
+    # Pace: predicted deltas on laps 1-2 are 0.25 and 0.6, so median(104.75, 99.4) = 102.075.
+    assert result["pace"] == pytest.approx(102.075)
+    assert result["real"] == pytest.approx(200.0)
+    # Laps 3-4: 2 * 102.075 + (0.0 + 0.75) + (0.1 + 1.0); the stop is on lap 2, so not scored.
+    assert result["predicted"] == pytest.approx(206.0)
+    assert (result["stops"], result["scored_laps"], result["skip_reason"]) == (0, 2, None)
+
+
+def test_second_half_record_skips_too_few_first_half_clean_laps():
+    laps = [half_lap(1, 105.0, 1, "MEDIUM", 0, clean=False), half_lap(2, 100.0, 1, "MEDIUM", 1),
+            half_lap(3, 99.0, 2, "HARD", 0), half_lap(4, 101.0, 2, "HARD", 1)]
+
+    result = second_half_record(laps, StubModel(), 4, 20.0, MAX_AGES_X, min_clean_laps=2)
+
+    assert result["skip_reason"] == "too_few_first_half_laps"
+    assert result["predicted"] is None
+
+
+def pair_record(car, pace, real, predicted, stops, pit_laps, session=1, skip=None):
+    return {"session_key": session, "circuit": "X", "year": 2024, "driver_number": car, "pace": pace,
+            "scored_laps": 2, "real": real, "predicted": predicted, "stops": stops, "pit_loss": 20.0,
+            "strategy": {"compounds": ["MEDIUM", "HARD"], "pit_laps": pit_laps}, "skip_reason": skip}
+
+
+def test_strategy_pair_errors_hand_example():
+    records = [
+        pair_record(1, 100.0, 205.0, 203.0, 1, [3]),
+        pair_record(2, 101.0, 204.0, 206.0, 0, [10]),
+        pair_record(3, 100.0, 210.0, 210.0, 1, [5]),           # same strategy as car 1 (within 3 laps)
+        pair_record(4, 100.0, 210.0, 210.0, 0, [1], skip="too_few_first_half_laps"),
+        pair_record(5, 100.0, 210.0, 210.0, 0, [1], session=2),  # another race: never paired
+    ]
+
+    pairs = strategy_pair_errors(records)
+
+    assert [(p["car_a"], p["car_b"]) for p in pairs] == [(1, 2), (2, 3)]
+    first = pairs[0]
+    # Pace gap (100 - 101) * 2 = -2. Real: (205 - 204) + 2 = 3. Predicted: (203 - 206) + 2 = -1.
+    assert first["real"] == pytest.approx(3.0)
+    assert first["predicted"] == pytest.approx(-1.0)
+    assert first["error"] == pytest.approx(-4.0)
+    assert first["stops_only"] == pytest.approx(20.0)

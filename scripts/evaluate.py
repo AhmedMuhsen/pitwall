@@ -1,5 +1,6 @@
 from pathlib import Path
 from statistics import median
+import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
@@ -7,8 +8,10 @@ from pitwall.evaluation import leave_one_race_out, score, score_by_group, split_
 from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel, build_pipeline
 from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
-from pitwall.backtest import backtest_race
-from pitwall.comparison import BASELINE, TRAIN_YEARS, compare_race, fastest_by_scenario, fit_inputs, load_dataset
+from pitwall.backtest import backtest_race, second_half_record, strategy_pair_errors
+from pitwall.comparison import (BASELINE, TRAIN_YEARS, comparable_races, compare_race, driver_choices,
+                                fastest_by_scenario, fit_final_model, fit_inputs, load_dataset)
+from pitwall.processing import race_distance
 from pitwall.simulator import observed_max_ages
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")
@@ -295,6 +298,60 @@ def print_strategy_comparison(rows):
         print(fastest_by_scenario(result["sensitivity"]).rename(columns=lambda c: f"{c:+.3f}").to_string())
 
 
+PAIR_BINS = [0, 1, 3, 5, 10, float("inf")]
+PAIR_LABELS = ["0-1", "1-3", "3-5", "5-10", "10+"]
+
+
+def second_half_records(rows, races, model, pit_loss, max_ages):
+    """second_half_record for every comparable car in the given (year, circuit) races."""
+    records = []
+    for year, circuit in races:
+        race = [r for r in rows if r["circuit"] == circuit and r["year"] == year]
+        distance = race_distance(race)
+        for driver in driver_choices(rows, circuit, year):
+            driver_rows = [r for r in race if r["driver_number"] == driver]
+            records.append(second_half_record(driver_rows, model, distance, pit_loss[circuit]["median"], max_ages))
+    return records
+
+
+def print_strategy_pair_check(rows):
+    """Does the simulator get the gap between two real strategies right? Pairs of cars in the same
+    safety-car-free race, pace from each car's first half, scored on the second half only. 2023 and
+    2024 races are scored by a model fitted on the other year; 2025 races by the final model."""
+    races = comparable_races(rows)
+    groups = {}
+    for year, fold_train, _ in leave_one_year_out(rows, [2023, 2024]):
+        train_years = sorted({r["year"] for r in fold_train})
+        model = fit_final_model(fold_train)
+        pit_loss = pit_loss_by_circuit(stop_losses(fold_train, model), train_years)
+        max_ages = observed_max_ages(max_clean_tyre_age(fold_train), train_years)
+        records = second_half_records(rows, [race for race in races if race[0] == year], model, pit_loss, max_ages)
+        groups.setdefault("2023-24 cross-year", []).extend(records)
+    inputs = fit_inputs(rows, TRAIN_YEARS)
+    groups["2025 (final model)"] = second_half_records(rows, [race for race in races if race[0] == 2025],
+                                                       inputs["model"], inputs["pit_loss"], inputs["max_ages"])
+
+    print("\nStrategy pairs: predicted vs real second-half gap, each car's pace from its first half")
+    for label, records in groups.items():
+        skipped = pd.Series([r["skip_reason"] for r in records if r["skip_reason"]]).value_counts().to_dict()
+        pairs = pd.DataFrame(strategy_pair_errors(records))
+        big = pairs[pairs["real"].abs() > 5]
+        print(f"\n  {label}: {len(records)} cars (skipped {skipped}), {len(pairs)} pairs, "
+              f"|real| median {pairs['real'].abs().median():.1f} s")
+        for name in ("predicted", "stops_only"):
+            error = pairs[name] - pairs["real"]
+            sign = (np.sign(big[name]) == np.sign(big["real"])).mean()
+            print(f"    {name:<10} MAE {error.abs().mean():5.2f} s  bias {error.mean():+5.2f}  "
+                  f"corr {pairs[name].corr(pairs['real']):+.2f}  faster one right when |real| > 5 s: {sign:.0%}")
+        print(f"    {'zero':<10} MAE {pairs['real'].abs().mean():5.2f} s")
+        pairs["predicted_size"] = pd.cut(pairs["predicted"].abs(), bins=PAIR_BINS, labels=PAIR_LABELS, right=False)
+        pairs["right"] = np.sign(pairs["predicted"]) == np.sign(pairs["real"])
+        table = pairs.groupby("predicted_size", observed=True).agg(n=("right", "size"), right=("right", "mean"),
+                                                                    mae=("error", lambda e: e.abs().mean()))
+        print("    by size of the predicted gap (s): share where the predicted faster car really was faster")
+        print(table.round(2).to_string().replace("\n", "\n      ").join(["      ", ""]))
+
+
 def print_final_test(rows):
     """The one 2025 test of the final model (P_1e5) fitted on 2023+2024, next to B_frac and the
     zero baseline. Reported, never used to choose a model (rule 4)."""
@@ -374,6 +431,7 @@ def main():
     print_residual_trends(rows)
     print_strategy_comparison(rows)
     print_final_test(rows)
+    print_strategy_pair_check(rows)
 
 
 if __name__ == "__main__":

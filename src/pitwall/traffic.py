@@ -116,7 +116,8 @@ def traffic_penalty(gap: float | None, table: dict) -> float:
 
 def traffic_timeline(free_laps: pd.DataFrame, pit_laps: list[int], pit_loss: float,
                      real_start: dict[int, float], field: dict[int, dict[int, float]], table: dict,
-                     anchor: dict[int, float] | None = None) -> dict:
+                     anchor: dict[int, float] | None = None, stop_loss: dict[int, float] | None = None,
+                     no_penalty_laps: set[int] | frozenset = frozenset()) -> dict:
     '''
     A strategy's laps with traffic, run against the replayed real field.
 
@@ -133,6 +134,9 @@ def traffic_timeline(free_laps: pd.DataFrame, pit_laps: list[int], pit_loss: flo
         real_start[n] plus how far ahead or behind the real strategy it is
         (cum - anchor), so the model's overall error cancels and only the
         difference between the strategies moves the car through the field.
+    stop_loss: optional in-lap -> seconds that stop costs, instead of pit_loss for every stop
+        (a stop under a safety car is cheaper)
+    no_penalty_laps: laps that never get a traffic penalty (laps near a safety car)
 
     returns: dict with "laps" (lap_number, traffic_gap in seconds or NaN when no car is
     ahead or no penalty applies, traffic_penalty, lap_time with the penalty) and "cum" (lap_number -> seconds elapsed before that lap, penalties
@@ -154,12 +158,13 @@ def traffic_timeline(free_laps: pd.DataFrame, pit_laps: list[int], pit_loss: flo
             start = None          # no start time for this car yet: its position is unknown
         else:
             start = previous_start + previous_lap_total
-        eligible = lap > 1 and lap not in pit_laps and (lap - 1) not in pit_laps
+        eligible = (lap > 1 and lap not in pit_laps and (lap - 1) not in pit_laps
+                    and lap not in no_penalty_laps)
         gap = gap_ahead(start, lap, field) if eligible and start is not None else None
         penalty = traffic_penalty(gap, table) if eligible else 0.0
         lap_time = float(free) + penalty
         rows.append({"lap_number": lap, "traffic_gap": gap, "traffic_penalty": penalty, "lap_time": lap_time})
-        previous_lap_total = lap_time + (pit_loss if lap in pit_laps else 0.0)
+        previous_lap_total = lap_time + ((stop_loss or {}).get(lap, pit_loss) if lap in pit_laps else 0.0)
         elapsed += previous_lap_total
         previous_start = start
     return {"laps": pd.DataFrame(rows), "cum": cum}

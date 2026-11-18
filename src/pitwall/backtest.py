@@ -6,6 +6,7 @@ import pandas as pd
 
 from pitwall.features import driver_reference_laps
 from pitwall.processing import race_distance
+from pitwall.neutralisation import apply_neutralisation
 from pitwall.simulator import simulate
 from pitwall.traffic import real_gaps, real_lap_penalties
 
@@ -69,7 +70,8 @@ def first_half_pace(driver_rows: list[dict], model, race_distance: int, min_clea
     return float(median(adjusted))
 
 
-def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int], pit_loss: float) -> dict:
+def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int], pit_loss: float,
+                     stops_cost: float | None = None) -> dict:
     '''
     A driver's race-total error (predicted minus actual) split into lap 1,
     stops and normal laps; the three parts add up to the total error.
@@ -80,6 +82,8 @@ def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int
         (columns "lap_number" and "lap_time")
     pit_laps: the strategy's pit laps (in-laps)
     pit_loss: seconds added per stop in the simulation
+    stops_cost: total seconds the simulation charged for all stops, if the stops didn't all
+        cost pit_loss (stops under a safety car); default len(pit_laps) * pit_loss
 
     returns: dict with "lap_one" (lap 1, including lap_one_loss), "stops"
         (in-lap + out-lap of every stop, plus pit_loss per stop), "normal"
@@ -99,14 +103,16 @@ def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int
     normal_by_lap = {lap: e for lap, e in sorted(errors.items()) if lap != 1 and lap not in stop_laps}
     return {
         "lap_one": errors[1],
-        "stops": sum(errors[lap] for lap in stop_laps) + len(pit_laps) * pit_loss,
+        "stops": sum(errors[lap] for lap in stop_laps)
+                 + (len(pit_laps) * pit_loss if stops_cost is None else stops_cost),
         "normal": sum(normal_by_lap.values()),
         "normal_by_lap": normal_by_lap,
     }
 
 
 def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: float,
-                  max_ages: dict, pace: str = "race_median", traffic_table: dict | None = None) -> list[dict]:
+                  max_ages: dict, pace: str = "race_median", traffic_table: dict | None = None,
+                  neutralisation: dict | None = None) -> list[dict]:
     '''
     Predicted vs actual total race time for every driver in one race.
 
@@ -122,6 +128,10 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
         race's year). Each car sits where it really was, so every lap gets the penalty
         of its real gap to the car ahead; it is added to the simulated lap times and to
         the predicted total, and taken out of a first-half pace.
+    neutralisation: optional neutralisation.build_neutralisation result. Without it a race
+        with safety-car laps is refused; with it the simulated laps under a safety car are
+        replaced by the field's real lap time, a stop under a real safety car costs
+        pit_loss_ratio * pit_loss, and laps near a safety car get no traffic penalty.
 
     returns: one dict per driver with "circuit", "year", "session_key",
         "driver_number", "laps", "predicted", "actual" and "error" (predicted
@@ -132,13 +142,14 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
         simulator refuses ("cannot_simulate: <message>") keep a record with
         predicted None.
 
-    raises ValueError if race_rows has more than one session or a safety-car lap.
+    raises ValueError if race_rows has more than one session, or a safety-car lap and no
+    neutralisation.
     '''
     sessions = {r["session_key"] for r in race_rows}
     if len(sessions) != 1:
         raise ValueError(f"Expected one race, got sessions {sorted(sessions)}")
-    if any("safety_car" in r["exclusion_reasons"] for r in race_rows):
-        raise ValueError("Race has safety-car laps; the simulator has no safety car, so it can't be backtested")
+    if neutralisation is None and any("safety_car" in r["exclusion_reasons"] for r in race_rows):
+        raise ValueError("Race has safety-car laps; pass a neutralisation to replay them, or it can't be backtested")
 
     distance = race_distance(race_rows)
     references = driver_reference_laps(race_rows)
@@ -165,6 +176,8 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
             except ValueError:
                 pit_laps = []        # the simulator will refuse this car below
             penalties = real_lap_penalties(driver, gaps, traffic_table, pit_laps, distance)
+            if neutralisation is not None:
+                penalties = {lap: p for lap, p in penalties.items() if lap not in neutralisation["no_traffic_laps"]}
         if pace == "first_half":
             reference = first_half_pace(laps, model, distance, penalties=penalties)
         elif pace == "race_median":
@@ -185,14 +198,16 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
             records.append(record)
             continue
         actual = sum(r["lap_duration"] for r in laps)
-        simulated_laps, predicted = result["laps"], result["total_time"]
+        simulated_laps, stop_loss = apply_neutralisation(result["laps"], strategy["pit_laps"], pit_loss, neutralisation)
+        stops_cost = sum(stop_loss.values())
+        predicted = float(simulated_laps["lap_time"].sum()) + stops_cost
         if penalties:
             simulated_laps = simulated_laps.assign(lap_time=simulated_laps["lap_time"]
                                                    + simulated_laps["lap_number"].map(penalties).fillna(0.0))
             predicted += sum(penalties.values())
         record.update(predicted=predicted, actual=actual,
                       error=predicted - actual, flags=result["flags"],
-                      components=error_components(laps, simulated_laps, strategy["pit_laps"], pit_loss))
+                      components=error_components(laps, simulated_laps, strategy["pit_laps"], pit_loss, stops_cost))
         records.append(record)
     return records
 

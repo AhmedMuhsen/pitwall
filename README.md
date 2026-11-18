@@ -40,6 +40,7 @@ The app needs the processed dataset, which is not in the repository (`data/` is 
 uv run python scripts/fetch_races.py        # caches raw JSON in data/raw/ (15 races, 3 s between requests)
 uv run python scripts/build_dataset.py      # data/processed/lap_dataset.parquet + docs/DATA_QUALITY.md
 uv run python scripts/build_driver_names.py # data/processed/driver_names.json (optional: car numbers otherwise)
+uv run python scripts/build_neutralisations.py # data/processed/neutralisations.json (safety-car windows; races with one are hidden without it)
 uv run streamlit run app.py
 ```
 
@@ -69,6 +70,8 @@ flowchart LR
 | `model.py` | Pooled linear model: compound, tyre age, race fraction, per compound-and-circuit wear adjustments pulled toward a shared rate |
 | `analysis.py` | Pit loss and lap-1 loss per circuit, residual trends, observed tyre-age ranges |
 | `simulator.py` | A strategy becomes predicted lap times and a race total; validation; out-of-range flags |
+| `traffic.py` | Lap-time penalty by gap to the car ahead; the real field replayed from lap start times |
+| `neutralisation.py` | Safety-car and virtual-safety-car windows; the field's real lap times on those laps; the cost of a stop under a real safety car |
 | `backtest.py`, `evaluation.py` | Real strategies run through the simulator; metrics and train/test splits |
 | `comparison.py` | The candidate strategies, rankings, sensitivity, verdict: everything the app displays |
 
@@ -95,8 +98,10 @@ pit loss (pit-lane time minus the same stretch at racing speed, measured per cir
   exclusion rule are in
   [`docs/DATA_QUALITY.md`](docs/DATA_QUALITY.md); the audit of the API is in
   [`docs/DATA_AUDIT.md`](docs/DATA_AUDIT.md).
-- 4 of the 15 races had a safety car (Sakhir 2023 and 2025, Singapore 2023, Yas Marina 2024). The
-  simulator has none, so the app only offers the other 11.
+- 4 of the 15 races had a safety car or virtual safety car: real safety cars at Singapore 2023 (laps
+  20-22) and Sakhir 2025 (laps 32-35), virtual ones at Sakhir 2023 (41-42), Singapore 2023 (44-45) and
+  Yas Marina 2024 (2-3). They are replayed from `race_control` (see below); the model itself is never
+  trained on those laps.
 - Raw data is kept apart from processed data; joins are on `session_key`, `driver_number` and
   `lap_number`, with key-uniqueness and row-count checks.
 
@@ -139,6 +144,24 @@ With traffic on, the predicted faster car really was faster about 55% of the tim
 gap was under 3 s, about 2 times in 3 between 3 and 10 s, and 84% (2023/24) to 94% (2025) above 10 s.
 That is why the verdict says "too close for the model to call" under 3 s.
 
+**Safety cars** are replayed, not predicted. On a lap under a safety car or virtual safety car the
+simulator uses the field's real lap time; a stop whose in-lap is under a real safety car costs about 68%
+of the circuit's normal pit loss (median of 14 real stops at Singapore 2023, the only real safety car
+in the training years); a stop under a virtual one costs the normal amount (4 stops seen, none cheaper).
+Whole-race backtest on the four races (each scored by a model fitted without its year; Sakhir 2025 is
+the only one fully out of sample for the stop cost):
+
+| Treatment of the neutralised laps | Mean error per car (4 races, 54 cars) | Sakhir 2025 (19 cars) |
+|---|---:|---:|
+| Simulated as normal racing (the old behaviour) | 101.6 s | 117.7 s |
+| Replay the field's lap times | 13.2 s | 12.3 s |
+| Replay lap times and cheaper safety-car stops | **12.7 s** | **11.0 s** |
+
+The error on the three races the model is otherwise unbiased on is 7.0 to 11.0 s, as in normal races;
+Singapore 2023 (21 s) carries the model's known late-race bias at that circuit (it was fitted on 2024
+alone), not a replay error. Strategy-gap hit rates (the pair check) were not repeated for these races:
+too few cars.
+
 **Traffic** is a lap-time penalty that depends on the gap to the car ahead, estimated from lap start
 times: a lap starting within half a second of another car is about +0.5 s slower than an average lap,
 falling to nothing beyond about 2 s ([DECISIONS](DECISIONS.md), 2026-11-18). It was checked on real
@@ -160,7 +183,10 @@ data for one), and the other cars never react.
 
 ## Limitations
 
-- **Safety cars**: not modelled. Races with one are excluded from the comparison.
+- **Safety cars** are replayed from what happened and never predicted: there is no "what if a safety
+  car had come out". The stop discount rests on 14 stops at one circuit. Alternatives that pit under
+  a real safety car get it, but the other cars keep their real reaction. The verdict thresholds come
+  from races without one.
 - **Traffic** is a simple replay of the real field with a penalty close behind another car (above).
   There is no overtaking logic, the other cars never react, and the training laps that were run in
   traffic are not removed (the penalty is relative to an average lap).

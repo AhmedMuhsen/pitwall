@@ -10,17 +10,18 @@ In the AWS console: Billing and Cost Management -> Budgets -> Create budget -> "
 small monthly amount you are happy to lose, and email alerts at 80% and 100% of actual spend and at
 100% forecast. Do this on a new account first, before launching anything.
 
-## 1. The app needs two small files that are not in git
+## 1. The app needs three small files that are not in git
 
 `app.py` reads `data/processed/lap_dataset.parquet` (about 300 KB) and optionally
-`data/processed/driver_names.json`. `.gitignore` excludes `data/processed/*`, so a fresh clone cannot
+`data/processed/driver_names.json` and `data/processed/neutralisations.json` (without the last one,
+the four races with a safety car are hidden). `.gitignore` excludes `data/processed/*`, so a fresh clone cannot
 run the app. Options:
 
 | | How | Trade-off |
 |---|---|---|
-| **A (recommended)** | Add `!data/processed/lap_dataset.parquet` and `!data/processed/driver_names.json` under `data/processed/*` in `.gitignore` and commit the two files | Tiny, reproducible, works on every host. The files are derived from public OpenF1 data; mention OpenF1 in the README (done) |
-| B | Build on the server: `fetch_races.py` then `build_dataset.py` | About 75 API requests at 3 s each, depends on the API being up at deploy time |
-| C | `scp` the two files to the server | Manual; easy to forget on redeploy |
+| **A (recommended)** | Add `!data/processed/lap_dataset.parquet`, `!data/processed/driver_names.json` and `!data/processed/neutralisations.json` under `data/processed/*` in `.gitignore` and commit the three files | Tiny, reproducible, works on every host. The files are derived from public OpenF1 data; mention OpenF1 in the README (done) |
+| B | Build on the server: `fetch_races.py`, `build_dataset.py`, `build_driver_names.py`, `build_neutralisations.py` | About 75 API requests at 3 s each, depends on the API being up at deploy time |
+| C | `scp` the three files to the server | Manual; easy to forget on redeploy |
 
 Raw API responses (`data/raw/`, 12 MB) stay out of git.
 

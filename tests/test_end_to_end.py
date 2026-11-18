@@ -7,6 +7,7 @@ import pytest
 
 from pitwall.comparison import (comparable_races, compare_driver, custom_strategy, driver_choices,
                                 fit_inputs, gap_ranges, load_dataset, verdict)
+from pitwall.neutralisation import load_neutralisations
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mini_laps.parquet"
 REAL = "actual"      # compare_driver measures every gap against the car's real strategy
@@ -79,3 +80,32 @@ def test_traffic_changes_the_numbers_but_not_the_shape(data):
     assert abs(on["model_error"]) < 120
     assert len(on["sensitivity"]) == len(off["sensitivity"])
     assert inputs["traffic_table"]["mean"][0] > inputs["traffic_table"]["mean"][-1]    # close behind costs time
+
+
+@pytest.fixture(scope="module")
+def safety_car_data():
+    rows = load_dataset(FIXTURE.parent / "mini_safety_car_laps.parquet")
+    windows = load_neutralisations(FIXTURE.parent / "mini_neutralisations.json")
+    return rows, windows, fit_inputs(rows, [2023, 2024], windows)
+
+
+def test_safety_car_races_become_comparable_with_their_windows(safety_car_data):
+    rows, windows, inputs = safety_car_data
+
+    assert (2025, "Sakhir") not in comparable_races(rows)                   # a real safety car, no windows given
+    assert (2025, "Sakhir") in comparable_races(rows, windows)
+    ratio = inputs["sc_pit_loss"]
+    assert ratio["n"] >= 10 and 0.4 < ratio["ratio"] < 1.0                     # stops under a real safety car are cheaper
+
+
+def test_comparing_a_car_in_a_safety_car_race(safety_car_data):
+    rows, windows, inputs = safety_car_data
+    car = driver_choices(rows, "Sakhir", 2025, inputs["model"], windows=windows)[0]
+
+    result = compare_driver(rows, inputs, "Sakhir", 2025, car, traffic=True)
+
+    assert result["neutralisation_windows"] == [{"kind": "SC", "start": 32, "end": 35}]    # Sakhir 2025
+    assert result["strategies"]["1stop_under_SC"]["pit_laps"] == [33]                       # first lap after deployment
+    assert math.isfinite(result["simulated_actual"]) and abs(result["model_error"]) < 90
+    with pytest.raises(ValueError, match="no safety-car windows"):
+        compare_driver(rows, {**inputs, "neutralisations": {}}, "Sakhir", 2025, car)

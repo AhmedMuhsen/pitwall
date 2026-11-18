@@ -447,3 +447,19 @@ with the real strategy for 18 of 124 cars (2 before). `compare_strategies`/`sens
 Next: replayed real safety cars (exact neutralised laps, SC lap times from the field, cheaper stops).
 
 Still unclear: Traffic for alternative strategies can't be validated (no real data for them).
+
+## 2026-11-18 Session 33 (v2 part 2: replayed safety cars)
+
+Done: neutralisation.py (windows from race_control, field lap times, SC stop ratio 0.68 from 14 real
+stops at Singapore 2023), simulator/comparison/backtest take a `neutralisation`; app offers the 4
+safety-car races (178 car pages, no errors) with a banner and a "pit under the safety car" candidate.
+Only 2 of the 4 races had a real SC (Singapore 2023, Sakhir 2025); the others were VSCs (stops under
+them were not cheaper, 4 stops). Backtest on the 4 races: 101.6 s (neutralised laps simulated as
+racing) -> 13.2 s (replay) -> 12.7 s (replay + cheaper stops); Sakhir 2025 out of sample 117.7 ->
+11.0 s. Singapore 2023's 21 s is the model's late-race bias, not the replay.
+
+Next: final pass (tests, clean-checkout run, README numbers), then your decisions: EC2 vs container,
+commit data/processed?
+
+Still unclear: SC stop discount rests on 14 stops at one circuit. Verdict thresholds were measured on
+races without a safety car.

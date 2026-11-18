@@ -12,9 +12,11 @@ import streamlit as st
 from pitwall.comparison import (TRAIN_YEARS, comparable_races, compare_driver, cumulative_gap, custom_strategy,
                                 driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names,
                                 race_session_key, race_settings, verdict)
+from pitwall.neutralisation import load_neutralisations
 
 DATASET_PATH = Path(__file__).parent / "data" / "processed" / "lap_dataset.parquet"
 NAMES_PATH = Path(__file__).parent / "data" / "processed" / "driver_names.json"
+NEUTRALISATIONS_PATH = Path(__file__).parent / "data" / "processed" / "neutralisations.json"
 BASELINE = "actual"
 COLOURS = {"faster in every scenario": "#2e7d32", "depends on assumptions": "#8a8a8a",
            "slower in every scenario": "#c62828"}
@@ -25,7 +27,8 @@ VERDICT_COLOURS = {"agrees": "#2e7d32", "too_close": "#8a8a8a", "leans": "#e0a10
 def load():
     """Dataset rows, the fitted inputs and driver names, built once per server (about 2 s)."""
     rows = load_dataset(DATASET_PATH)
-    return rows, fit_inputs(rows, TRAIN_YEARS), load_driver_names(NAMES_PATH)
+    windows = load_neutralisations(NEUTRALISATIONS_PATH)
+    return rows, fit_inputs(rows, TRAIN_YEARS, windows), load_driver_names(NAMES_PATH)
 
 
 def plain(strategy: dict) -> str:
@@ -68,10 +71,10 @@ except FileNotFoundError:
              "`uv run python scripts/fetch_races.py` then `uv run python scripts/build_dataset.py`.")
     st.stop()
 
-races = {f"{circuit} {year}": (year, circuit) for year, circuit in comparable_races(rows)}
+races = {f"{circuit} {year}": (year, circuit) for year, circuit in comparable_races(rows, inputs["neutralisations"])}
 year, circuit = races[st.sidebar.selectbox("Race", list(races))]
-st.sidebar.caption("Races without a safety car only: the simulator has none, so real times wouldn't compare.")
-drivers = driver_choices(rows, circuit, year, inputs["model"])
+st.sidebar.caption("Safety cars are replayed from what really happened in the race.")
+drivers = driver_choices(rows, circuit, year, inputs["model"], windows=inputs["neutralisations"])
 if not drivers:
     st.error(f"No driver at {circuit} {year} ran every lap with a time, so there is nothing to compare.")
     st.stop()
@@ -125,6 +128,8 @@ except ValueError as e:
 
 strategies = result["strategies"]
 names = {name: plain(s) for name, s in strategies.items()}
+if "1stop_under_SC" in names:
+    names["1stop_under_SC"] += " (pit under the safety car)"
 if "custom" in names:
     names["custom"] = "Yours: " + names["custom"]
 ranges = gap_ranges(result["sensitivity"], BASELINE)
@@ -139,6 +144,15 @@ if full_name:
 st.markdown(f"**Real strategy:** {names[BASELINE]}")
 if year not in TRAIN_YEARS:
     st.caption(f"{year} races were never used to fit the model: this race is out-of-sample.")
+if result["neutralisation_windows"]:
+    periods = " and ".join(f"{'safety car' if w['kind'] == 'SC' else 'virtual safety car'} on laps "
+                           f"{w['start']}–{w['end']}" for w in result["neutralisation_windows"])
+    sc_cost = inputs["sc_pit_loss"]
+    st.info(f"This race had a {periods}. It is replayed: those laps take the field's real lap time"
+            + (f", and a stop under a real safety car costs about {sc_cost['ratio']:.0%} of a normal one "
+               f"(measured on {sc_cost['n']} real stops)" if sc_cost else "")
+            + ". A stop under a virtual safety car is charged the normal cost: too few were seen to measure a saving. "
+              "Strategy gaps in safety-car races have not been tested the way those in normal races were.")
 
 r = answer["range"]
 # The model only knows tyre age and fuel, so it tends to prefer evenly split stints. Say so next to
@@ -205,7 +219,8 @@ with left:
         st.metric("Real race time", race_clock(result["actual_time"]))
         st.metric("Model, same strategy", race_clock(result["simulated_actual"]),
                   delta=f"{result['model_error']:+.1f} s vs real", delta_color="off")
-        st.caption("Across safety-car-free races the model's race total was off by about 10 s on average. "
+        st.caption("Across races without a safety car the model's race total was off by about 10 s on average "
+                   "(about 13 s on the four races with one). "
                    "Much of that error is shared by every strategy in a race, so the gaps above are more "
                    "reliable than the totals. The bars show the part that isn't shared.")
         actual_flags = next(row["flags"] for row in result["ranking"] if row["strategy"] == BASELINE)
@@ -261,13 +276,17 @@ with st.expander("All numbers"):
         if row["error"]:
             st.caption(f"✘ {row['strategy']} can't be simulated: {row['error']}")
 
+sc_cost = inputs["sc_pit_loss"]
+SC_STOP_TEXT = f"about {sc_cost['ratio']:.0%} (measured on {sc_cost['n']} real stops in {TRAIN_YEARS[0]}-{TRAIN_YEARS[-1]})" if sc_cost else "the normal amount"
 with st.expander("Assumptions and limitations"):
     st.markdown(f"""
 - **What the model estimates:** lap-time loss associated with tyre age, not physical tyre wear.
   Lap times are relative to each driver's median clean lap in the race.
 - **No driver-specific tyre wear.** The driver only sets the pace level and the real strategy. The
   alternatives rank the same way for every driver in a race.
-- **Safety cars are not modelled**, so only races without one are offered.
+- **Safety cars are replayed, not predicted.** Laps under a real or virtual safety car take the field's real lap
+  time. A stop under a real safety car costs {SC_STOP_TEXT} of the normal pit loss; a stop under a virtual one costs the
+  normal amount. The other cars pit when they really did. Safety cars that did not happen are never added.
 - **Traffic is a simple replay.** With "Include traffic" on, every strategy runs against the other cars' real
   lap times and a lap starting close behind another car costs time (estimated from {TRAIN_YEARS[0]}–{TRAIN_YEARS[-1]}
   laps). The other cars never react, there is no overtaking logic and finishing positions are not estimated.

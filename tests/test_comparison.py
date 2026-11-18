@@ -3,8 +3,8 @@ import pytest
 
 from pitwall.comparison import (candidate_strategies, comparable_races, compare_driver, compare_race,
                                 compare_strategies, cumulative_gap, custom_strategy, driver_choices, fastest_by_scenario, fit_inputs,
-                                gap_ranges, load_dataset, load_driver_names, race_session_key, race_settings, sensitivity,
-                                verdict)
+                                gap_ranges, load_dataset, load_driver_names, race_session_key, race_settings,
+                                safety_car_candidate, sensitivity, verdict)
 from pitwall.simulator import simulate
 
 
@@ -180,7 +180,7 @@ def driver_lap(driver, lap, duration, compound, stint, age, reasons=(), year=202
     return {"session_key": 1, "circuit": "X", "year": year, "driver_number": driver, "lap_number": lap,
             "lap_duration": duration, "is_clean": duration is not None and not reasons,
             "compound": compound, "stint_number": stint, "tyre_age": age, "exclusion_reasons": list(reasons),
-            "race_fraction": lap / 4}
+            "race_fraction": lap / 4, "is_pit_out_lap": False}
 
 
 # 4-lap race. Car 1: MEDIUM laps 1-2 (ages 0, 1), pits on lap 2, HARD laps 3-4 (ages 0, 1),
@@ -419,3 +419,58 @@ def test_sensitivity_with_traffic_keeps_the_scenario_grid():
 def test_compare_driver_with_traffic_needs_a_traffic_table():
     with pytest.raises(ValueError, match="traffic_table"):
         compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 1, min_clean_laps=2, traffic=True)
+
+
+NEUTRAL = {"lap_times": {2: 150.0}, "sc_laps": {2}, "laps": {2}, "no_traffic_laps": {1, 2, 3}, "pit_loss_ratio": 0.5}
+
+
+def test_compare_strategies_with_a_safety_car_hand_example():
+    result = compare_strategies(STRATEGIES, 4, "X", StubModel(), 100.0, 20.0, 0.0, MAX_AGES, "one_stop",
+                                neutralisation=NEUTRAL)
+
+    totals = {r["strategy"]: r["total"] for r in result}
+    # Lap 2 is replaced by the field's 150 s. one_stop: 100.25 + 150 + 100.75 + 101.1 = 452.1, and its only stop
+    # is on lap 2 (under the safety car): 0.5 * 20 = 10. two_stop stops after laps 1 and 2: 20 + 10.
+    assert totals["one_stop"] == pytest.approx(462.1)
+    assert totals["two_stop"] == pytest.approx(482.1)
+    without_discount = compare_strategies(STRATEGIES, 4, "X", StubModel(), 100.0, 20.0, 0.0, MAX_AGES, "one_stop",
+                                          neutralisation={**NEUTRAL, "pit_loss_ratio": None})
+    assert {r["strategy"]: r["total"] for r in without_discount} == pytest.approx({"one_stop": 472.1, "two_stop": 492.1})
+
+
+def test_safety_car_candidate():
+    assert safety_car_candidate([{"kind": "SC", "start": 20, "end": 22}], 58) == {
+        "compounds": ["MEDIUM", "HARD"], "pit_laps": [21]}
+    assert safety_car_candidate([{"kind": "SC", "start": 5, "end": 5}], 58)["pit_laps"] == [5]
+    assert safety_car_candidate([{"kind": "VSC", "start": 20, "end": 21}], 58) is None   # no cheaper stop
+    assert safety_car_candidate([], 58) is None
+    assert safety_car_candidate([{"kind": "SC", "start": 5, "end": 6}], 4) is None        # lap 6 is not in a 4-lap race
+
+
+SC_RACE = [{**r, "exclusion_reasons": ["safety_car"] if r["lap_number"] == 2 else r["exclusion_reasons"],
+            "is_clean": r["is_clean"] and r["lap_number"] != 2} for r in DRIVER_RACE]
+WINDOWS = {1: [{"kind": "SC", "start": 2, "end": 2}]}
+
+
+def test_races_with_a_safety_car_need_windows():
+    assert comparable_races(SC_RACE) == []
+    assert comparable_races(SC_RACE, WINDOWS) == [(2024, "X")]
+    assert driver_choices(SC_RACE, "X", 2024, windows=WINDOWS) == [1]
+    with pytest.raises(ValueError, match="no safety-car windows"):
+        driver_choices(SC_RACE, "X", 2024)
+    with pytest.raises(ValueError, match="no safety-car windows"):
+        compare_driver(SC_RACE, INPUTS, "X", 2024, 1, min_clean_laps=1)
+
+
+def test_compare_driver_replays_the_safety_car():
+    inputs = {**INPUTS, "neutralisations": WINDOWS, "sc_pit_loss": {"ratio": 0.5}}
+
+    result = compare_driver(SC_RACE, inputs, "X", 2024, 1, min_clean_laps=1)
+
+    # Pace from lap 1 only (lap 2 is under the safety car): 105 - 0.25 = 104.75. Simulated laps 105.0, then
+    # the field's lap 2 (median of 100, 101 and 110 = 101.0), 105.5, 105.85 = 417.35; the stop on lap 2 costs 0.5 * 20.
+    assert result["settings"]["reference_lap"] == pytest.approx(104.75)
+    assert result["simulated_actual"] == pytest.approx(427.35)
+    assert result["model_error"] == pytest.approx(22.35)
+    assert result["neutralisation_windows"] == WINDOWS[1]
+    assert result["strategies"]["1stop_under_SC"]["pit_laps"] == [2]

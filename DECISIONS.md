@@ -792,3 +792,29 @@ One entry per real decision. Format:
 - **What would make us reconsider** — A circuit-level check showing the penalty is wrong at one
   track, a penalty that changes much between years once more races are added, or an overtaking
   rule becoming estimable.
+
+## 2026-11-18 — Safety cars are replayed from the real windows; stops under a real one are cheaper
+
+- **Decision** — `neutralisation.py` reads the exact safety-car and VSC windows from `race_control`
+  (`scripts/build_neutralisations.py` -> `data/processed/neutralisations.json`). On a neutralised lap
+  the simulator uses the field's real lap time (median of the cars' lap times that lap, pit laps left
+  out) instead of the model; a stop whose in-lap is under a *real* safety car costs `ratio` x the
+  circuit's normal pit loss, with `ratio` the median over stops really made under one in the training
+  years (0.68, 14 stops, all Singapore 2023); a stop under a VSC costs the normal amount; no traffic
+  penalty on neutralised laps or the laps next to them. Races with a safety car become selectable
+  in the app and a "pit under the safety car" candidate is added where a real one occurred. Random
+  safety cars stay out of scope.
+- **Requirement** — v2 scope (above): replay real safety cars, check against the yardstick.
+- **Options** — Replay laps only; replay laps + cheaper stops; ignore safety-car races (status quo).
+  Pit-loss saving per circuit (too few stops); one pooled ratio of the normal pit loss (chosen).
+- **Choice and reason** — Whole-race backtest on the 4 races, each scored without its own year:
+  mean error 101.6 s with the neutralised laps treated as normal racing, 13.2 s replaying the lap times,
+  12.7 s with cheaper stops; the one fully out-of-sample race (Sakhir 2025, 19 cars): 117.7 -> 12.3 -> 11.0 s.
+  Stops under a VSC were not cheaper in the data (4 stops, 28-57 s), so they keep the normal cost.
+- **Known limits** — The ratio comes from one real safety car in the training years (the test race was
+  scored with it out of sample, but Singapore 2023 cannot be: its fold has no real safety car, so it is
+  charged normal stops). Singapore 2023's 21 s error is the model's late-race bias there, not the replay
+  (normal-lap error -15.8 s, laps 30-43). Strategy-gap hit rates were not re-measured on these
+  races (too few cars), so the verdict thresholds come from races without a safety car; the app says so.
+- **What would make us reconsider** — More races with a safety car showing a different stop discount,
+  or a circuit whose neutralised laps are poorly represented by the field median.

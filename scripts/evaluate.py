@@ -13,9 +13,11 @@ from pitwall.comparison import (BASELINE, TRAIN_YEARS, comparable_races, compare
                                 fastest_by_scenario, fit_final_model, fit_inputs, load_dataset)
 from pitwall.processing import race_distance
 from pitwall.simulator import observed_max_ages
+from pitwall.neutralisation import build_neutralisation, fit_sc_pit_loss, load_neutralisations
 from pitwall.traffic import fit_traffic_penalty, real_gaps
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")
+NEUTRALISATIONS_PATH = Path("data/processed/neutralisations.json")
 # Tyre-age buckets for the error slices: 0-9, 10-19, 20-29, 30+ laps.
 AGE_BINS = [-1, 9, 19, 29, float("inf")]
 AGE_LABELS = ["0-9", "10-19", "20-29", "30+"]
@@ -364,6 +366,62 @@ def print_strategy_pair_check(rows):
             print("    by size of the predicted gap (s): share where the predicted faster car really was faster")
             print(table.round(2).to_string().replace("\n", "\n      ").join(["      ", ""]))
 
+EMPTY_REPLAY = {"lap_times": {}, "sc_laps": set(), "laps": set(), "no_traffic_laps": set(), "pit_loss_ratio": None}
+
+
+def safety_car_backtest(rows, windows):
+    """Backtest records for every race with a safety car or VSC (first-half pace, traffic on), under three
+    treatments of the neutralised laps: "none" (simulated as normal racing, the old behaviour), "laps"
+    (the field's real lap times, normal pit loss) and "laps+stops" (also a cheaper stop under a real
+    safety car). 2023 and 2024 races use a model, pit loss and ratio fitted on the other year; 2025 on
+    2023+2024. Returns a list of dicts: variant, year, circuit, driver, error, skip_reason."""
+    out = []
+    races = sorted({(r["year"], r["circuit"]) for r in rows if "safety_car" in r["exclusion_reasons"]})
+    for year, circuit in races:
+        train_years = [y for y in TRAIN_YEARS if y != year]
+        train = [r for r in rows if r["year"] in train_years]
+        model = fit_final_model(train)
+        pit_loss = pit_loss_by_circuit(stop_losses(train, model), train_years)
+        lap_one = pit_loss_by_circuit(lap_one_losses(train, model), train_years)
+        lap_one_all = median(r["loss"] for r in lap_one_losses(train, model) if r["loss"] is not None)
+        lap_one_loss = lap_one[circuit]["median"] if circuit in lap_one else lap_one_all
+        max_ages = observed_max_ages(max_clean_tyre_age(train), train_years)
+        table = fit_traffic_penalty(train, model)
+        sc = fit_sc_pit_loss(train, windows, pit_loss, train_years)
+        race = [r for r in rows if r["year"] == year and r["circuit"] == circuit]
+        for variant in ("none", "laps", "laps+stops"):
+            if variant == "none":
+                neutralisation = EMPTY_REPLAY
+            else:
+                ratio = sc["ratio"] if variant == "laps+stops" and sc else None
+                neutralisation = build_neutralisation(race, windows[race[0]["session_key"]], ratio)
+            for record in backtest_race(race, model, pit_loss[circuit]["median"], lap_one_loss, max_ages,
+                                        "first_half", table, neutralisation):
+                out.append({"variant": variant, "year": year, "circuit": circuit, "driver": record["driver_number"],
+                            "error": record["error"], "skip_reason": record["skip_reason"],
+                            "sc_ratio": None if sc is None else round(sc["ratio"], 2),
+                            "sc_stops": None if sc is None else sc["n"]})
+    return out
+
+
+def print_safety_car_backtest(rows, windows):
+    """Race-total error on the safety-car and VSC races with the neutralised laps replayed or not."""
+    df = pd.DataFrame(safety_car_backtest(rows, windows))
+    done = df[df["error"].notna()]
+    print("\nSafety-car and VSC races, race-total error per car (seconds, + = predicted too slow), "
+          "first-half pace, traffic on")
+    for (year, circuit), g in done.groupby(["year", "circuit"]):
+        ratio = g["sc_ratio"].iloc[0]
+        print(f"  {circuit} {year} (SC stop ratio from training years: {ratio}, n={g['sc_stops'].iloc[0]})")
+        for variant, v in g.groupby("variant", sort=False):
+            print(f"    {variant:<11} n={len(v):>2}  MAE {v['error'].abs().mean():6.1f}  bias {v['error'].mean():+6.1f}  "
+                  f"median |err| {v['error'].abs().median():5.1f}")
+    print("  all four races:")
+    for variant, v in done.groupby("variant", sort=False):
+        print(f"    {variant:<11} n={len(v):>3}  MAE {v['error'].abs().mean():6.1f}  bias {v['error'].mean():+6.1f}")
+    print("  skip reasons:", df[df["variant"] == "none"]["skip_reason"].value_counts().to_dict())
+
+
 def print_final_test(rows):
     """The one 2025 test of the final model (P_1e5) fitted on 2023+2024, next to B_frac and the
     zero baseline. Reported, never used to choose a model (rule 4)."""
@@ -444,6 +502,7 @@ def main():
     print_strategy_comparison(rows)
     print_final_test(rows)
     print_strategy_pair_check(rows)
+    print_safety_car_backtest(rows, load_neutralisations(NEUTRALISATIONS_PATH))
 
 
 if __name__ == "__main__":

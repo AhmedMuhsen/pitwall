@@ -1,6 +1,7 @@
+import pandas as pd
 import pytest
 
-from pitwall.backtest import actual_strategy, backtest_race
+from pitwall.backtest import actual_strategy, backtest_race, error_components
 
 
 class StubModel:
@@ -90,3 +91,49 @@ def test_backtest_race_skips_driver_with_no_clean_lap():
     [record] = backtest_race(rows, StubModel(), pit_loss=20.0, lap_one_loss=5.0, max_ages=MAX_AGES)
 
     assert record["predicted"] is None and record["skip_reason"] == "no_reference"
+
+
+def test_error_components_hand_example():
+    # Pit on lap 2: lap 2 is the in-lap, lap 3 the out-lap, lap 4 normal.
+    actual = [race_lap(1, n, d, 1, "SOFT", 0, False) for n, d in ((1, 95.0), (2, 80.0), (3, 101.0), (4, 81.0))]
+    simulated = pd.DataFrame({"lap_number": [1, 2, 3, 4], "lap_time": [85.75, 81.1, 81.25, 81.6]})
+
+    parts = error_components(actual, simulated, pit_laps=[2], pit_loss=20.0)
+
+    assert parts["lap_one"] == pytest.approx(-9.25)
+    assert parts["stops"] == pytest.approx(1.1 - 19.75 + 20.0)
+    assert parts["normal"] == pytest.approx(0.6)
+    assert parts["normal_by_lap"] == {4: pytest.approx(0.6)}
+
+
+def test_error_components_driver_with_no_stops():
+    actual = [race_lap(1, n, d, 1, "SOFT", 0, False) for n, d in ((1, 90.0), (2, 80.0), (3, 81.0))]
+    simulated = pd.DataFrame({"lap_number": [1, 2, 3], "lap_time": [88.0, 80.5, 80.5]})
+
+    parts = error_components(actual, simulated, pit_laps=[], pit_loss=20.0)
+
+    assert parts["stops"] == 0
+    assert parts["lap_one"] == pytest.approx(-2.0)
+    assert parts["normal_by_lap"] == {2: pytest.approx(0.5), 3: pytest.approx(-0.5)}
+
+
+def test_error_components_raises_when_laps_dont_match():
+    actual = [race_lap(1, 1, 90.0, 1, "SOFT", 0, False)]
+    simulated = pd.DataFrame({"lap_number": [1, 2], "lap_time": [88.0, 80.5]})
+
+    with pytest.raises(ValueError, match="match"):
+        error_components(actual, simulated, pit_laps=[], pit_loss=20.0)
+
+
+def test_backtest_race_components_add_up_to_error():
+    rows = [
+        race_lap(1, 1, 95.0, 1, "SOFT", 0, False, ["lap_1"]),
+        race_lap(1, 2, 80.0, 1, "SOFT", 1, True),
+        race_lap(1, 3, 101.0, 2, "HARD", 0, False, ["pit_out"]),
+        race_lap(1, 4, 81.0, 2, "HARD", 1, True),
+    ]
+
+    [record] = backtest_race(rows, StubModel(), pit_loss=20.0, lap_one_loss=5.0, max_ages=MAX_AGES)
+
+    parts = record["components"]
+    assert parts["lap_one"] + parts["stops"] + parts["normal"] == pytest.approx(record["error"])

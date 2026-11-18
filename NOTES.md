@@ -371,3 +371,18 @@ laps to find the race-wide bias, then choose between P_1e5 and B.
 
 Still unclear: Whether the race-wide bias is the fuel term, year-to-year pit
 loss, lap 1 or the reference lap. Backtest covers lead-lap finishers only.
+
+## 2026-11-17 Session 23
+
+Done: error_components in backtest.py splits each race-total error into lap 1,
+stops and normal laps (backtest records get "components"); print_error_split in
+evaluate.py. Lap 1 and stops stay within about ±4 s per race; normal laps carry
+the bias in 5 of 7 races (Singapore 2024 +13.4 s, Monza 2024 -10.0, B_frac).
+The normal-lap error drifts with race lap in opposite directions across years
+(Monza 2023 +0.7 to -0.8 s/lap, Monza 2024 -0.55 to +0.3). Model choice left open.
+
+Next: Session 24: look at the race-lap term (fuel + track evolution) per race,
+e.g. how much its slope varies between races and years, then choose P_1e5 vs B.
+
+Still unclear: Whether a per-race race-lap slope is learnable at all before a
+race (it may only be a limitation). Monza 2023's error is mostly lap 1 (+4.2 s).

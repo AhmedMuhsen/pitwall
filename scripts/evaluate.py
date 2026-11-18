@@ -176,6 +176,30 @@ def print_cross_year_backtest(rows):
         print(table.round(1).to_string())
 
 
+def print_error_split(rows):
+    """Cross-year backtest error split into lap 1, stops and normal laps (mean per race), then the
+    normal-lap error by lap bucket: a drift with race lap points at the fuel term, a flat offset
+    at the reference lap or pace level."""
+    for name, alpha in (("B_frac", None), ("P_100000", 100_000)):
+        done = pd.DataFrame(cross_year_backtest(rows, pooling_alpha=alpha)).dropna(subset=["predicted"])
+        parts = pd.DataFrame(done["components"].tolist(), index=done.index)
+        done = done.join(parts[["lap_one", "stops", "normal"]])
+        done["normal_per_lap"] = done["normal"] / parts["normal_by_lap"].str.len()
+        table = done.groupby(["year", "circuit"])[["error", "lap_one", "stops", "normal", "normal_per_lap"]].mean()
+        table["n"] = done.groupby(["year", "circuit"]).size()
+        print(f"\nBacktest error split, {name}: mean per race (seconds, + = predicted too slow)")
+        print(table.round(2).to_string())
+
+        laps = pd.DataFrame([{"year": y, "circuit": c, "lap_number": lap, "error": e}
+                             for y, c, by_lap in zip(done["year"], done["circuit"], parts["normal_by_lap"])
+                             for lap, e in by_lap.items()])
+        laps["lap_bucket"] = pd.cut(laps["lap_number"], bins=LAP_BINS, labels=LAP_LABELS)
+        drift = laps.pivot_table(index="lap_bucket", columns=["year", "circuit"], values="error",
+                                 aggfunc="mean", observed=True)
+        print(f"\nNormal-lap error by lap bucket, {name} (seconds per lap)")
+        print(drift.round(2).to_string())
+
+
 def print_held_out_2024(train):
     """Models on held-out 2024 races: overall, then B (fuel by lap) vs B_frac (fuel by race fraction)."""
     print("\nHeld-out 2024 races (fit on the other four), clean laps")
@@ -250,6 +274,7 @@ def main():
     print_held_out_2024(train)
     print_cross_year(rows)
     print_cross_year_backtest(rows)
+    print_error_split(rows)
 
 
 if __name__ == "__main__":

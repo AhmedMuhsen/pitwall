@@ -34,6 +34,42 @@ def actual_strategy(driver_rows: list[dict]) -> dict:
             "start_ages": [s["tyre_age"] for s in stints]}
 
 
+def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int], pit_loss: float) -> dict:
+    '''
+    A driver's race-total error (predicted minus actual) split into lap 1,
+    stops and normal laps; the three parts add up to the total error.
+
+    driver_laps: the driver's dataset rows for laps 1..race distance, each
+        with "lap_number" and a non-missing "lap_duration"
+    simulated_laps: simulate(...)["laps"] for the driver's actual strategy
+        (columns "lap_number" and "lap_time")
+    pit_laps: the strategy's pit laps (in-laps)
+    pit_loss: seconds added per stop in the simulation
+
+    returns: dict with "lap_one" (lap 1, including lap_one_loss), "stops"
+        (in-lap + out-lap of every stop, plus pit_loss per stop), "normal"
+        (every other lap) and "normal_by_lap" (lap_number -> error of each
+        normal lap), all in seconds, positive = predicted too slow. Lap 1
+        always counts as lap_one, even if it is an in-lap.
+
+    raises ValueError if the two sets of laps don't cover the same lap numbers.
+    '''
+    actual = {r["lap_number"]: r["lap_duration"] for r in driver_laps}
+    predicted = dict(zip(simulated_laps["lap_number"], simulated_laps["lap_time"]))
+    if set(actual) != set(predicted):
+        raise ValueError(f"Actual laps {sorted(set(actual) ^ set(predicted))} don't match the simulated laps")
+
+    stop_laps = {lap for p in pit_laps for lap in (p, p + 1)} - {1}
+    errors = {lap: float(predicted[lap] - actual[lap]) for lap in actual}
+    normal_by_lap = {lap: e for lap, e in sorted(errors.items()) if lap != 1 and lap not in stop_laps}
+    return {
+        "lap_one": errors[1],
+        "stops": sum(errors[lap] for lap in stop_laps) + len(pit_laps) * pit_loss,
+        "normal": sum(normal_by_lap.values()),
+        "normal_by_lap": normal_by_lap,
+    }
+
+
 def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: float,
                   max_ages: dict) -> list[dict]:
     '''
@@ -49,8 +85,8 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
 
     returns: one dict per driver with "circuit", "year", "session_key",
         "driver_number", "laps", "predicted", "actual" and "error" (predicted
-        minus actual, seconds; positive = predicted too slow), "flags" and
-        "skip_reason". Drivers who didn't complete every lap with a time
+        minus actual, seconds; positive = predicted too slow), "flags",
+        "components" (error_components of the error) and "skip_reason".Drivers who didn't complete every lap with a time
         ("not_full_distance", e.g. lapped or retired), have no clean lap for a
         reference ("no_reference") or whose strategy the
         simulator refuses ("cannot_simulate: <message>") keep a record with
@@ -75,7 +111,7 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
         first = laps[0]
         record = {"circuit": first["circuit"], "year": first["year"], "session_key": first["session_key"],
                   "driver_number": driver, "laps": distance, "predicted": None, "actual": None,
-                  "error": None, "flags": [], "skip_reason": None}
+                  "error": None, "flags": [], "components": None, "skip_reason": None}
         timed = {r["lap_number"] for r in laps if r["lap_duration"] is not None}
         if not set(range(1, distance + 1)) <= timed:
             record["skip_reason"] = "not_full_distance"
@@ -88,7 +124,8 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
             continue
         laps = [r for r in laps if r["lap_number"] <= distance]
         try:
-            result = simulate(actual_strategy(laps), distance, first["circuit"], model,
+            strategy = actual_strategy(laps)
+            result = simulate(strategy, distance, first["circuit"], model,
                               reference, pit_loss, lap_one_loss, max_ages)
         except ValueError as e:
             record["skip_reason"] = f"cannot_simulate: {e}"
@@ -96,6 +133,7 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
             continue
         actual = sum(r["lap_duration"] for r in laps)
         record.update(predicted=result["total_time"], actual=actual,
-                      error=result["total_time"] - actual, flags=result["flags"])
+                      error=result["total_time"] - actual, flags=result["flags"],
+                      components=error_components(laps, result["laps"], strategy["pit_laps"], pit_loss))
         records.append(record)
     return records

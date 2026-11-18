@@ -9,10 +9,12 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from pitwall.comparison import (TRAIN_YEARS, comparable_races, compare_driver, cumulative_gap, driver_choices,
-                                fit_inputs, gap_ranges, load_dataset, verdict)
+from pitwall.comparison import (TRAIN_YEARS, comparable_races, compare_driver, cumulative_gap, custom_strategy,
+                                driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names,
+                                race_session_key, race_settings, verdict)
 
 DATASET_PATH = Path(__file__).parent / "data" / "processed" / "lap_dataset.parquet"
+NAMES_PATH = Path(__file__).parent / "data" / "processed" / "driver_names.json"
 BASELINE = "actual"
 COLOURS = {"faster in every scenario": "#2e7d32", "depends on assumptions": "#8a8a8a",
            "slower in every scenario": "#c62828"}
@@ -21,9 +23,9 @@ VERDICT_COLOURS = {"agrees": "#2e7d32", "too_close": "#8a8a8a", "leans": "#e0a10
 
 @st.cache_resource
 def load():
-    """Dataset rows and the fitted inputs, built once per server (about 2 s)."""
+    """Dataset rows, the fitted inputs and driver names, built once per server (about 2 s)."""
     rows = load_dataset(DATASET_PATH)
-    return rows, fit_inputs(rows, TRAIN_YEARS)
+    return rows, fit_inputs(rows, TRAIN_YEARS), load_driver_names(NAMES_PATH)
 
 
 def plain(strategy: dict) -> str:
@@ -60,7 +62,7 @@ st.caption(f"Estimates from a lap-time model fitted on {TRAIN_YEARS[0]}–{TRAIN
            "(OpenF1 timing data). A learning project, not affiliated with Formula 1, the FIA or FOM.")
 
 try:
-    rows, inputs = load()
+    rows, inputs, driver_names = load()
 except FileNotFoundError:
     st.error(f"Dataset not found at {DATASET_PATH}. Build it first: "
              "`uv run python scripts/fetch_races.py` then `uv run python scripts/build_dataset.py`.")
@@ -73,24 +75,61 @@ drivers = driver_choices(rows, circuit, year, inputs["model"])
 if not drivers:
     st.error(f"No driver at {circuit} {year} ran every lap with a time, so there is nothing to compare.")
     st.stop()
-cars = {f"Car #{d}": d for d in drivers}
+session_key = race_session_key(rows, circuit, year)
+
+
+def car_label(number: int) -> str:
+    """'VER · #1' if the driver's name is known, else 'Car #1'."""
+    known = driver_names.get((session_key, number))
+    return f"{known['acronym']} · #{number}" if known and known["acronym"] else f"Car #{number}"
+
+
+cars = {car_label(d): d for d in drivers}
 driver = cars[st.sidebar.selectbox("Car", list(cars))]
-st.sidebar.caption("Cars that finished on the lead lap with a time on every lap and enough clean laps in the first half to measure their pace.")
+st.sidebar.caption("Cars that finished on the lead lap with a time on every lap and enough clean laps in the "
+                   "first half to measure their pace.")
+who = car_label(driver)
+full_name = (driver_names.get((session_key, driver)) or {}).get("name")
 
 try:
-    result = compare_driver(rows, inputs, circuit, year, driver)
+    distance = race_settings(rows, inputs, circuit, year)["race_distance"]
 except ValueError as e:
-    st.error(f"Can't compare car #{driver} at {circuit} {year}: {e}")
+    st.error(f"Can't compare strategies at {circuit} {year}: {e}")
+    st.stop()
+
+custom = None
+with st.sidebar.expander("Try your own strategy"):
+    stops = st.radio("Stops", [1, 2, 3], horizontal=True)
+    compounds = [st.selectbox(f"Stint {i + 1} tyre", ["SOFT", "MEDIUM", "HARD"], index=1 + i % 2,
+                              key=f"compound_{i}") for i in range(stops + 1)]
+    pit_laps = [int(st.number_input(f"Stop {i + 1} on lap", min_value=1, max_value=distance - 1, step=1,
+                                    value=distance * (i + 1) // (stops + 1), key=f"pit_{i}_{stops}_{distance}"))
+                for i in range(stops)]
+    if st.checkbox("Add it to the comparison"):
+        try:
+            custom = custom_strategy(compounds, pit_laps, distance)
+        except ValueError as e:
+            st.error(f"Your strategy can't be used: {e}")
+
+try:
+    result = compare_driver(rows, inputs, circuit, year, driver, custom=custom)
+except ValueError as e:
+    st.error(f"Can't compare {who} at {circuit} {year}: {e}")
     st.stop()
 
 strategies = result["strategies"]
 names = {name: plain(s) for name, s in strategies.items()}
+if "custom" in names:
+    names["custom"] = "Yours: " + names["custom"]
 ranges = gap_ranges(result["sensitivity"], BASELINE)
 answer = verdict(ranges)
 settings = result["settings"]
 
 # --- Who, what they ran, and the answer -------------------------------------------------------
-st.subheader(f"Car #{driver} · {circuit} {year}")
+st.subheader(f"{who} · {circuit} {year}")
+if full_name:
+    st.caption(f"{full_name}" + (f", {driver_names[(session_key, driver)]['team']}"
+                                 if driver_names[(session_key, driver)]["team"] else ""))
 st.markdown(f"**Real strategy:** {names[BASELINE]}")
 if year not in TRAIN_YEARS:
     st.caption(f"{year} races were never used to fit the model: this race is out-of-sample.")

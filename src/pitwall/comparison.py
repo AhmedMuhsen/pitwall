@@ -2,6 +2,8 @@
 from collections import defaultdict
 from statistics import median
 
+import json
+
 import pandas as pd
 import pyarrow.parquet as pq
 
@@ -354,14 +356,65 @@ def driver_choices(rows: list[dict], circuit: str, year: int, model=None, min_cl
     return sorted(choices)
 
 
+def _with_start_ages(candidate: dict, actual: dict) -> dict:
+    """candidate with start_ages: the first set keeps the real first set's age if it is the same
+    compound (everyone starts on the tyres they qualified on); every later set is new."""
+    first_age = actual["start_ages"][0] if candidate["compounds"][0] == actual["compounds"][0] else 0
+    return {**candidate, "start_ages": [first_age] + [0] * (len(candidate["compounds"]) - 1)}
+
+
+def custom_strategy(compounds: list[str], pit_laps: list[int], race_distance: int) -> dict:
+    '''
+    A user-typed strategy, checked.
+
+    compounds: tyre compound of each stint in order, e.g. ["MEDIUM", "HARD"]
+    pit_laps: the lap each stop is made on (the in-lap), one fewer than compounds
+    race_distance: laps in the race
+
+    returns: {"compounds": ..., "pit_laps": ...}, ready for compare_driver(custom=...)
+    raises ValueError with a message the user can act on (simulator.validate_strategy):
+    unknown compound, fewer than two different dry compounds, wrong number of pit
+    laps, pit laps out of order or outside the race.
+    '''
+    strategy = {"compounds": [c.upper() for c in compounds], "pit_laps": [int(p) for p in pit_laps]}
+    validate_strategy(strategy, race_distance)
+    return strategy
+
+
+def load_driver_names(path) -> dict[tuple[int, int], dict]:
+    '''
+    Driver names written by scripts/build_driver_names.py.
+
+    path: data/processed/driver_names.json
+    returns: dict (session_key, driver_number) -> {"acronym", "name", "team"}; {} if
+    the file doesn't exist, so the app can fall back to car numbers.
+    '''
+    try:
+        with open(path, encoding="utf-8") as f:
+            table = json.load(f)
+    except FileNotFoundError:
+        return {}
+    return {(int(session), int(number)): value
+            for session, drivers in table.items() for number, value in drivers.items()}
+
+
+def race_session_key(rows: list[dict], circuit: str, year: int) -> int:
+    """The session_key of one race; raises ValueError if the race isn't in rows."""
+    for row in rows:
+        if row["circuit"] == circuit and row["year"] == year:
+            return row["session_key"]
+    raise ValueError(f"No race for {circuit} {year} in the dataset")
+
+
 def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driver: int,
-                   min_clean_laps: int = 5) -> dict:
+                   min_clean_laps: int = 5, custom: dict | None = None) -> dict:
     '''
     One driver's real strategy against the candidate strategies (SPEC section 1).
 
     rows, inputs, circuit, year: as in race_settings; the race must have no safety car
     driver: driver number, one of driver_choices
     min_clean_laps: first-half clean laps needed to estimate the car's pace
+    custom: optional custom_strategy result, added as "custom" to the strategies
 
     returns: dict with
         "settings": race_settings, with "reference_lap" this car's pace: the median over
@@ -396,8 +449,10 @@ def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driv
     # Everyone starts the race on the set they started on; only later sets are a free choice.
     strategies = {"actual": actual}
     for name, candidate in candidate_strategies(distance).items():
-        first_age = actual["start_ages"][0] if candidate["compounds"][0] == actual["compounds"][0] else 0
-        strategies[name] = {**candidate, "start_ages": [first_age] + [0] * (len(candidate["compounds"]) - 1)}
+        strategies[name] = _with_start_ages(candidate, actual)
+    if custom is not None:
+        validate_strategy(custom, distance)
+        strategies["custom"] = _with_start_ages(custom, actual)
     result = _compare_all(strategies, settings, circuit, inputs, "actual")
     actual_time = sum(r["lap_duration"] for r in laps)
     simulated = next(r["total"] for r in result["ranking"] if r["strategy"] == "actual")

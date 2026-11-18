@@ -346,3 +346,22 @@ def test_quality_markdown():
     assert '| Race | `date_start` |' in markdown
     assert '`tyre_age`' in markdown.split('No missing values in:')[1]
     assert '| Monza 2024 | 1 | 1 | 0 | 0 | 0 | 1 | 0 |' in markdown
+
+
+
+def test_build_driver_names_hand_example():
+    from pitwall.processing import build_driver_names
+    records = [{"driver_number": 1, "name_acronym": "VER", "first_name": "Max", "last_name": "Verstappen",
+                "team_name": "Red Bull Racing"},
+               {"driver_number": 63, "name_acronym": None, "first_name": None, "last_name": "Russell",
+                "team_name": ""}]
+
+    assert build_driver_names(records) == {
+        1: {"acronym": "VER", "name": "Max Verstappen", "team": "Red Bull Racing"},
+        63: {"acronym": None, "name": "Russell", "team": None}}
+
+
+def test_build_driver_names_rejects_duplicate_number():
+    from pitwall.processing import build_driver_names
+    with pytest.raises(ValueError, match="twice"):
+        build_driver_names([{"driver_number": 1}, {"driver_number": 1}])

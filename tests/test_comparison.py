@@ -2,8 +2,9 @@ import pandas as pd
 import pytest
 
 from pitwall.comparison import (candidate_strategies, comparable_races, compare_driver, compare_race,
-                                compare_strategies, cumulative_gap, driver_choices, fastest_by_scenario, fit_inputs,
-                                gap_ranges, load_dataset, race_settings, sensitivity, verdict)
+                                compare_strategies, cumulative_gap, custom_strategy, driver_choices, fastest_by_scenario, fit_inputs,
+                                gap_ranges, load_dataset, load_driver_names, race_session_key, race_settings, sensitivity,
+                                verdict)
 from pitwall.simulator import simulate
 
 
@@ -337,3 +338,44 @@ def test_compare_driver_candidates_start_on_the_real_first_set():
     assert strategies["2stop_MHH"]["start_ages"] == [3, 0, 0]
     assert strategies["1stop_HM"]["start_ages"] == [0, 0]          # starts on HARD: a new set
     assert strategies["2stop_SHH"]["start_ages"] == [0, 0, 0]
+
+
+def test_custom_strategy_normalises_and_validates():
+    assert custom_strategy(["medium", "hard"], [2], 4) == {"compounds": ["MEDIUM", "HARD"], "pit_laps": [2]}
+    with pytest.raises(ValueError, match="two different dry compounds"):
+        custom_strategy(["HARD", "HARD"], [2], 4)
+    with pytest.raises(ValueError, match="between 1 and 3"):
+        custom_strategy(["MEDIUM", "HARD"], [4], 4)
+    with pytest.raises(ValueError, match="strictly increasing"):
+        custom_strategy(["MEDIUM", "HARD", "SOFT"], [3, 2], 4)
+    with pytest.raises(ValueError, match="Not dry compounds"):
+        custom_strategy(["INTERMEDIATE", "HARD"], [2], 4)
+
+
+def test_compare_driver_adds_custom_strategy_starting_on_the_real_first_set():
+    race = [{**r, "tyre_age": r["tyre_age"] + 3} if r["driver_number"] == 1 and r["stint_number"] == 1 else r
+            for r in DRIVER_RACE]
+    custom = custom_strategy(["MEDIUM", "SOFT"], [2], 4)
+
+    result = compare_driver(race, INPUTS, "X", 2024, 1, min_clean_laps=2, custom=custom)
+
+    assert result["strategies"]["custom"] == {"compounds": ["MEDIUM", "SOFT"], "pit_laps": [2], "start_ages": [3, 0]}
+    assert "custom" in {r["strategy"] for r in result["ranking"]}
+    assert "custom" in set(result["laps"]["strategy"])
+
+
+def test_compare_driver_rejects_invalid_custom_strategy():
+    with pytest.raises(ValueError, match="two different dry compounds"):
+        compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 1, min_clean_laps=2,
+                       custom={"compounds": ["HARD", "HARD"], "pit_laps": [2]})
+
+
+def test_load_driver_names_and_session_key(tmp_path):
+    path = tmp_path / "names.json"
+    path.write_text('{"1": {"44": {"acronym": "HAM", "name": "Lewis Hamilton", "team": "Ferrari"}}}')
+
+    assert load_driver_names(path) == {(1, 44): {"acronym": "HAM", "name": "Lewis Hamilton", "team": "Ferrari"}}
+    assert load_driver_names(tmp_path / "missing.json") == {}
+    assert race_session_key(DRIVER_RACE, "X", 2024) == 1
+    with pytest.raises(ValueError, match="No race"):
+        race_session_key(DRIVER_RACE, "Y", 2024)

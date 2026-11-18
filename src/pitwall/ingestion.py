@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-ENDPOINTS = {"laps", "stints", "race_control", "weather", "pit"}
+ENDPOINTS = {"laps", "stints", "race_control", "weather", "pit", "drivers"}
 API = "https://api.openf1.org/v1"
 RAW_DIR = Path("data/raw")
 

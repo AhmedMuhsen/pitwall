@@ -274,3 +274,27 @@ def quality_markdown(report: dict) -> str:
               'A lap can have more than one reason, so a row can add up to more than its excluded laps.', '']
     lines += markdown_table(report, EXCLUSION_REASONS, [f'`{r}`' for r in EXCLUSION_REASONS])
     return '\n'.join(lines) + '\n'
+
+def build_driver_names(records: list[dict]) -> dict[int, dict]:
+    '''
+    Driver names for one session, from the OpenF1 /drivers records.
+
+    records: /drivers records of one session, each with "driver_number" (int),
+        "name_acronym", "first_name", "last_name" and "team_name"; any
+        of the three name fields may be missing or None
+
+    returns: dict driver_number -> {"acronym", "name", "team"}, e.g.
+    {1: {"acronym": "VER", "name": "Max Verstappen", "team": "Red Bull Racing"}}.
+    A missing field is None, never an empty string.
+
+    raises ValueError if a driver_number appears twice (the join key would be ambiguous).
+    '''
+    names = {}
+    for record in records:
+        number = record["driver_number"]
+        if number in names:
+            raise ValueError(f"Driver number {number} appears twice in one session")
+        full = " ".join(part for part in (record.get("first_name"), record.get("last_name")) if part)
+        names[number] = {"acronym": record.get("name_acronym") or None, "name": full or None,
+                         "team": record.get("team_name") or None}
+    return names

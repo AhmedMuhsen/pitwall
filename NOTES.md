@@ -419,3 +419,18 @@ deploy notes), then v2: traffic and replayed real safety cars (DECISIONS 2026-11
 
 Still unclear: The model prefers another strategy for most cars (even-stint bias).
 How the deployed app gets data/processed (gitignored). Not checked in a real browser.
+
+## 2026-11-18 Session 31 (v1 finish, run without supervision)
+
+Done: verdict tiers from the pair check (<3 s too close, 3-10 s leans, >10 s prefers);
+`first_half_pace` for each car's pace (whole-race backtest MAE 11.81 -> 10.41 s);
+custom strategy in the app with validation; driver names (`drivers` endpoint cached,
+`scripts/build_driver_names.py`); end-to-end test on a 90 KB real subset
+(tests/fixtures/mini_laps.parquet); README, CI workflow, docs/DEPLOY.md (not deployed).
+Clean-environment check: uv sync from tracked files only, 184 tests passed.
+
+Next: v2, traffic first (gate: is a close-behind penalty visible in the lap data?), then
+replayed real safety cars (DECISIONS 2026-11-18).
+
+Still unclear: EC2 vs container for the AWS deploy (your decision, see docs/DEPLOY.md), and
+whether to commit data/processed/ (two files, about 330 KB) so a fresh clone can run the app.

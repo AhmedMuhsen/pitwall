@@ -1,0 +1,169 @@
+# PitWall
+
+A small F1 race-strategy simulator built on historical timing data. Pick a race and a car, and
+PitWall shows the strategy that car really ran, then estimates how its race time would have changed
+under a few other pit strategies, and how far to trust the comparison.
+
+A learning project, not affiliated with Formula 1, the FIA or FOM. It estimates lap-time loss that
+goes with tyre age under a simple model. It does **not** find the best strategy.
+
+## What it answers
+
+> What would this driver's total race time have been if they had pitted on different laps, or used
+> different compounds?
+
+The app (`app.py`) gives, for one car in one race:
+
+- a one-line verdict: does the model prefer another strategy, and how sure can you be (see
+  [Evaluation](#evaluation) for what "sure" means);
+- a dot-and-range chart of each alternative's time against the real strategy;
+- a lap-by-lap chart of where the time is won or lost (pit stops are steps, tyre age is the slope);
+- your own strategy, typed in and checked (wrong number of stops, one compound only, pit laps out of
+  order and so on give a plain error, not a crash).
+
+Comparisons are between strategies for **one car in one race**. PitWall does not compare drivers and
+does not estimate finishing positions.
+
+## Setup
+
+Requires [uv](https://docs.astral.sh/uv/) (it installs the pinned Python 3.13 and dependencies).
+
+```bash
+uv sync
+uv run pytest -q                      # tests never call the live API
+```
+
+The app needs the processed dataset, which is not in the repository (`data/` is git-ignored; a
+90 KB subset used by the tests is in `tests/fixtures/`). To build it from the OpenF1 API:
+
+```bash
+uv run python scripts/fetch_races.py        # caches raw JSON in data/raw/ (15 races, 3 s between requests)
+uv run python scripts/build_dataset.py      # data/processed/lap_dataset.parquet + docs/DATA_QUALITY.md
+uv run python scripts/build_driver_names.py # data/processed/driver_names.json (optional: car numbers otherwise)
+uv run streamlit run app.py
+```
+
+Every API response is cached, so re-running only fetches what is missing.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[OpenF1 API] --> B[raw JSON cache<br/>data/raw/]
+    B --> C[cleaning + joins<br/>processing.py]
+    C --> D[lap dataset<br/>data/processed/*.parquet]
+    D --> E[features<br/>features.py]
+    E --> F[lap-time model<br/>model.py]
+    F --> G[strategy simulator<br/>simulator.py]
+    G --> H[comparison + verdict<br/>comparison.py]
+    H --> I[Streamlit app<br/>app.py]
+    D --> J[backtests and checks<br/>backtest.py, evaluation.py, analysis.py]
+    F --> J
+```
+
+| Module | Job |
+|---|---|
+| `ingestion.py` | Fetch and cache OpenF1 endpoints (laps, stints, race control, weather, drivers) |
+| `processing.py` | Join laps to stints, label every lap with exclusion reasons, build the dataset, quality report |
+| `features.py` | Lap time relative to the driver's median clean lap (the target), race fraction (fuel proxy) |
+| `model.py` | Pooled linear model: compound, tyre age, race fraction, per compound-and-circuit wear adjustments pulled toward a shared rate |
+| `analysis.py` | Pit loss and lap-1 loss per circuit, residual trends, observed tyre-age ranges |
+| `simulator.py` | A strategy becomes predicted lap times and a race total; validation; out-of-range flags |
+| `backtest.py`, `evaluation.py` | Real strategies run through the simulator; metrics and train/test splits |
+| `comparison.py` | The candidate strategies, rankings, sensitivity, verdict: everything the app displays |
+
+The app only displays; every number comes from `comparison.py`.
+
+### The model, in plain words
+
+Each lap's time is predicted as the driver's own median clean lap plus a delta:
+`delta = compound offset + tyre-age slope × tyre age + fuel term × race fraction`. The fuel term also
+absorbs the track getting faster. Tyre age restarts at each stop; race fraction does not. The wear
+slope is shared, with a small adjustment per compound at each circuit (partial pooling, so a pair
+with few laps stays close to the shared rate). **This is tyre-age-associated lap-time loss, not
+physical tyre wear.**
+
+A strategy is a plain dict: compounds per stint and the laps pitted on. A stop costs the circuit's
+pit loss (pit-lane time minus the same stretch at racing speed, measured per circuit).
+
+## Data
+
+- Source: the [OpenF1](https://openf1.org) API, historical data only.
+- 15 dry, non-sprint races: Sakhir (Bahrain), Hungaroring, Monza, Singapore and Yas Marina (Abu
+  Dhabi), each in 2023, 2024 and 2025. 17,100 laps, 15,468 of them clean (not lap 1, a pit in-lap
+  or out-lap, a safety-car lap, a retirement lap or a lap with missing data). Counts and every
+  exclusion rule are in
+  [`docs/DATA_QUALITY.md`](docs/DATA_QUALITY.md); the audit of the API is in
+  [`docs/DATA_AUDIT.md`](docs/DATA_AUDIT.md).
+- 4 of the 15 races had a safety car (Sakhir 2023 and 2025, Singapore 2023, Yas Marina 2024). The
+  simulator has none, so the app only offers the other 11.
+- Raw data is kept apart from processed data; joins are on `session_key`, `driver_number` and
+  `lap_number`, with key-uniqueness and row-count checks.
+
+## Evaluation
+
+Rules: the model is trained on 2023 and 2024, and 2025 is never used to choose or tune anything
+(it is reported once). Never a random split of laps within a race. Choices are made with
+leave-one-year-out on 2023/24 (fit on one year, score the other).
+
+**Lap-time model**, 2025 races (out of sample), seconds per lap, against predicting "every lap is the
+driver's normal lap":
+
+| | Clean laps MAE | RMSE | Bias | All racing laps MAE |
+|---|---:|---:|---:|---:|
+| Zero baseline | 0.792 | 1.129 | +0.022 | 0.955 |
+| PitWall model | **0.612** | 0.952 | +0.146 | **0.764** |
+
+The model is worse than the baseline on tyres 30+ laps old in 2025 (bias +0.71 s: old tyres lost
+less time than the straight-line wear predicts). That bias is not present in 2023/24, so it is
+treated as a 2025 effect and reported, not modelled
+([DECISIONS](DECISIONS.md), 2026-11-18).
+
+**Whole-race backtest**: each driver's real strategy run through the simulator, safety-car-free
+2023/24 races, each scored by a model fitted on the other year: mean absolute error **10.4 s** per
+race total (76 driver-races, about 0.18 s per lap).
+
+**Do strategy gaps come out right?** The app compares strategies, so the check that matters is
+pairs of cars in the same race that ran different strategies (320 pairs 2023/24 cross-year, 244
+pairs in 2025). Each car's pace is taken from its first half and only the second half is scored:
+
+| | Model gap error | "No strategy effect" error | Picks the faster car (real gap > 5 s) |
+|---|---:|---:|---:|
+| 2023/24 cross-year | 11.2 s | 12.8 s | 70% |
+| 2025 | 10.9 s | 15.7 s | 76% |
+
+By size of the predicted gap, the predicted faster car really was faster about 55% of the time under
+3 s, about 65% between 3 and 10 s, and about 90% above 10 s. That is why the verdict says "too close
+for the model to call" under 3 s.
+
+## Reading the results
+
+- **A gap is not an instruction.** The model only knows tyre age and fuel, so it tends to favour evenly
+  split stints. Real teams pit for undercuts, traffic, tyre allocation and sudden tyre drop-off, none
+  of which it sees. A "the model prefers X" verdict means exactly that.
+- **Gaps are more reliable than totals.** Much of the model's error is shared by every strategy in a
+  race and cancels in a gap.
+- **The range bars** show how the gap moves with pit loss (25th to 75th percentile at that circuit)
+  and tyre wear (±0.032 s per lap of tyre age, the typical wear error on a year the model did not see).
+- **A warning triangle** marks a strategy that runs tyres older than any seen at that circuit; its
+  number is an extrapolation and never counts in the verdict.
+
+## Limitations
+
+- **Safety cars**: not modelled. Races with one are excluded from the comparison.
+- **Traffic and overtaking**: not modelled. Every car runs in clean air, and the dataset's
+  traffic-affected laps are not removed from training.
+- **Track evolution** is folded into the race-fraction term; it cannot be separated from fuel burn.
+- **Fuel and tyre wear** within one race are only roughly separable.
+- **Old tyres in 2025** lost less time than the model predicts (above).
+- **No driver-specific tyre wear**: a driver sets the pace level and the real strategy; the
+  alternatives rank the same way for every driver in a race.
+- **Five circuits, three years.** Pit loss and wear per circuit come from 2 to 3 races each.
+- **Alternatives use new tyre sets** after the first stint.
+- No claim of an optimal strategy, and no causal claim about tyre degradation.
+
+## Project notes
+
+`CLAUDE.md` holds the working rules, `docs/PITWALL_PLAN.md` the roadmap, `docs/SPEC.md` the one-page
+spec, `NOTES.md` a short log per session and `DECISIONS.md` every real design decision with the
+alternatives considered.

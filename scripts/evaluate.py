@@ -123,7 +123,7 @@ def print_cross_year(rows):
             print(table.round(3).to_string())
 
 
-def cross_year_backtest(rows, wear_by_pair=False, pooling_alpha=None):
+def cross_year_backtest(rows, wear_by_pair=False, pooling_alpha=None, pace="race_median"):
     """Backtest records for the safety-car-free 2023 and 2024 races, each with model, pit loss,
     lap-1 loss and observed range estimated on the other year only."""
     records = []
@@ -150,7 +150,7 @@ def cross_year_backtest(rows, wear_by_pair=False, pooling_alpha=None):
             else:
                 lap_one_loss = lap_one_all
                 print(f"    {circuit} {year}: no lap-1 loss in {train_years}, using all-circuit median {lap_one_all:.1f}s")
-            records += backtest_race(race, model, pit_loss[circuit]["median"], lap_one_loss, max_ages)
+            records += backtest_race(race, model, pit_loss[circuit]["median"], lap_one_loss, max_ages, pace)
     return records
 
 

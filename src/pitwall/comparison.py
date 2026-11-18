@@ -6,7 +6,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
-from pitwall.backtest import actual_strategy
+from pitwall.backtest import actual_strategy, first_half_pace
 from pitwall.evaluation import leave_one_year_out
 from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel
@@ -315,16 +315,19 @@ def _race_rows(rows: list[dict], circuit: str, year: int) -> list[dict]:
     return race
 
 
-def driver_choices(rows: list[dict], circuit: str, year: int) -> list[int]:
+def driver_choices(rows: list[dict], circuit: str, year: int, model=None, min_clean_laps: int = 5) -> list[int]:
     '''
     Drivers whose race can be compared: same rules as backtest.backtest_race.
 
     rows: load_dataset rows
     circuit, year: a race from comparable_races
+    model: fitted model; if given, a driver also needs at least min_clean_laps clean
+        laps in the first half of the race, because that is where compare_driver
+        takes the pace from (backtest.first_half_pace)
 
     returns: sorted driver numbers with a lap time on every lap 1..race
-    distance (so lapped and retired drivers are left out) and at least one
-    clean lap (for the reference lap).
+    distance (so lapped and retired drivers are left out) and, if model is None,
+    at least one clean lap.
 
     raises ValueError if the race isn't in rows or had a safety car.
     '''
@@ -332,23 +335,38 @@ def driver_choices(rows: list[dict], circuit: str, year: int) -> list[int]:
     distance = race_distance(race)
     references = driver_reference_laps(race)
     timed = defaultdict(set)
+    by_driver = defaultdict(list)
     for row in race:
+        by_driver[row["driver_number"]].append(row)
         if row["lap_duration"] is not None:
             timed[row["driver_number"]].add(row["lap_number"])
     session = race[0]["session_key"]
-    return sorted(d for d, laps in timed.items()
-                  if set(range(1, distance + 1)) <= laps and (session, d) in references)
+    choices = []
+    for driver, laps in timed.items():
+        if not set(range(1, distance + 1)) <= laps:
+            continue
+        if model is None:
+            ok = (session, driver) in references
+        else:
+            ok = first_half_pace(by_driver[driver], model, distance, min_clean_laps) is not None
+        if ok:
+            choices.append(driver)
+    return sorted(choices)
 
 
-def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driver: int) -> dict:
+def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driver: int,
+                   min_clean_laps: int = 5) -> dict:
     '''
     One driver's real strategy against the candidate strategies (SPEC section 1).
 
     rows, inputs, circuit, year: as in race_settings; the race must have no safety car
     driver: driver number, one of driver_choices
+    min_clean_laps: first-half clean laps needed to estimate the car's pace
 
     returns: dict with
-        "settings": race_settings, with "reference_lap" this driver's median clean lap
+        "settings": race_settings, with "reference_lap" this car's pace: the median over
+            its first-half clean laps of lap time minus the model's delta
+            (backtest.first_half_pace), so the strategy being tested doesn't set the pace
         "actual_strategy": backtest.actual_strategy (used sets keep their start age)
         "actual_time": the driver's real race time, sum of lap times, seconds
         "simulated_actual": simulated time of that strategy, seconds
@@ -362,17 +380,18 @@ def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driv
             times (in-laps and out-laps include the time lost in the pit lane)
 
     raises ValueError if the race had a safety car, the driver isn't in
-    driver_choices, or the simulator refuses the driver's real strategy.
+    driver_choices (including too few clean first-half laps), or the simulator
+    refuses the driver's real strategy.
     '''
     race = _race_rows(rows, circuit, year)
-    if driver not in driver_choices(rows, circuit, year):
+    if driver not in driver_choices(rows, circuit, year, inputs["model"], min_clean_laps):
         raise ValueError(f"Car {driver} didn't run every lap of {circuit} {year} with a time "
                          "(lapped, retired or missing data), so it can't be compared")
     settings = race_settings(rows, inputs, circuit, year)
     distance = settings["race_distance"]
     laps = sorted((r for r in race if r["driver_number"] == driver and r["lap_number"] <= distance),
                   key=lambda r: r["lap_number"])
-    settings["reference_lap"] = driver_reference_laps(laps)[(laps[0]["session_key"], driver)]
+    settings["reference_lap"] = first_half_pace(laps, inputs["model"], distance, min_clean_laps)
     actual = actual_strategy(laps)
     # Everyone starts the race on the set they started on; only later sets are a free choice.
     strategies = {"actual": actual}

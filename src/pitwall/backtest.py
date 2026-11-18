@@ -37,6 +37,30 @@ def actual_strategy(driver_rows: list[dict]) -> dict:
             "start_ages": [s["tyre_age"] for s in stints]}
 
 
+def first_half_pace(driver_rows: list[dict], model, race_distance: int, min_clean_laps: int = 5) -> float | None:
+    '''
+    A car's pace from the first half of the race only, with the model's tyre and
+    fuel effects taken out.
+
+    driver_rows: the car's rows in one race, each with "lap_number", "lap_duration",
+        "is_clean" and the model's inputs ("compound", "circuit", "tyre_age",
+        "race_fraction")
+    model: fitted model, predict(DataFrame) -> delta in seconds
+    race_distance: laps in the race; the first half is laps 1..race_distance // 2
+    min_clean_laps: fewest first-half clean laps to estimate from
+
+    returns: median over the first-half clean laps of lap_duration minus the
+    model's predicted delta, in seconds; None if there are fewer than
+    min_clean_laps such laps. Whole-race pace would already contain the effect
+    of the strategy being tested, so the scored laps never set the pace.
+    '''
+    half = race_distance // 2
+    clean = pd.DataFrame([r for r in driver_rows if r["lap_number"] <= half and r["is_clean"]])
+    if len(clean) < min_clean_laps:
+        return None
+    return float(median(clean["lap_duration"] - model.predict(clean)))
+
+
 def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int], pit_loss: float) -> dict:
     '''
     A driver's race-total error (predicted minus actual) split into lap 1,
@@ -74,7 +98,7 @@ def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int
 
 
 def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: float,
-                  max_ages: dict) -> list[dict]:
+                  max_ages: dict, pace: str = "race_median") -> list[dict]:
     '''
     Predicted vs actual total race time for every driver in one race.
 
@@ -84,7 +108,8 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
         "exclusion_reasons"
     model, pit_loss, lap_one_loss, max_ages: as in simulator.simulate, all
         estimated without this race's year
-    The reference lap is the driver's median clean lap in this race (rule 1).
+    pace: "race_median" (default) uses the driver's median clean lap in this race as
+        the reference lap (rule 1); "first_half" uses first_half_pace instead.
 
     returns: one dict per driver with "circuit", "year", "session_key",
         "driver_number", "laps", "predicted", "actual" and "error" (predicted
@@ -120,7 +145,12 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
             record["skip_reason"] = "not_full_distance"
             records.append(record)
             continue
-        reference = references.get((first["session_key"], driver))
+        if pace == "first_half":
+            reference = first_half_pace(laps, model, distance)
+        elif pace == "race_median":
+            reference = references.get((first["session_key"], driver))
+        else:
+            raise ValueError(f"pace must be 'race_median' or 'first_half', got {pace!r}")
         if reference is None:
             record["skip_reason"] = "no_reference"
             records.append(record)
@@ -176,11 +206,10 @@ def second_half_record(driver_rows: list[dict], model, race_distance: int, pit_l
               "driver_number": first["driver_number"], "strategy": strategy, "pace": None,
               "scored_laps": race_distance - half, "real": None, "predicted": None, "stops": stops,
               "pit_loss": pit_loss, "skip_reason": None}
-    clean_first = pd.DataFrame([r for r in laps if r["lap_number"] <= half and r["is_clean"]])
-    if len(clean_first) < min_clean_laps:
+    pace = first_half_pace(laps, model, race_distance, min_clean_laps)
+    if pace is None:
         record["skip_reason"] = "too_few_first_half_laps"
         return record
-    pace = float(median(clean_first["lap_duration"] - model.predict(clean_first)))
     try:
         # Lap 1 is never scored here, so its standing-start loss doesn't matter.
         sim = simulate(strategy, race_distance, first["circuit"], model, pace, pit_loss, 0.0, max_ages)

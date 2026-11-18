@@ -748,3 +748,20 @@ One entry per real decision. Format:
   are in `comparison.verdict`; the headline states the hit rate in plain words.
 - **What would make us reconsider** — Traffic or safety-car replay (v2) changing these hit
   rates; re-run `print_strategy_pair_check` and move the thresholds.
+
+## 2026-11-18 — A car's pace comes from its first half, not the whole race
+
+- **Decision** — `compare_driver` (the app) sets each car's reference lap to
+  `backtest.first_half_pace`: the median over first-half clean laps of lap time minus the
+  model's delta. A car needs at least 5 such laps (all 124 comparable cars have them).
+- **Requirement** — The whole-race median lap already contains the effect of the strategy
+  being tested (fresher tyres make a faster median), which hides part of the strategy's effect
+  in the "pace" and makes the model-vs-real error look smaller or larger than it is.
+- **Options** — Whole-race median (rule 1 default); first-half adjusted pace.
+- **Choice and reason** — First-half. Cross-year whole-race backtest (76 driver-races,
+  P_1e5): MAE 11.81 s -> 10.41 s, bias -0.92 -> +2.58 s, median |error| 8.87 -> 9.45 s. The
+  gate was "MAE no worse". Gaps between strategies don't depend on the pace level, so the
+  verdicts are unchanged; only the real-vs-simulated panel moves. `backtest_race` keeps the
+  whole-race median as default (`pace="first_half"` is the option).
+- **What would make us reconsider** — The +2.6 s bias getting larger with traffic or
+  safety-car replay, or a split point other than half distance doing clearly better.

@@ -178,7 +178,8 @@ def test_fastest_by_scenario_rejects_no_ranked_rows():
 def driver_lap(driver, lap, duration, compound, stint, age, reasons=(), year=2024):
     return {"session_key": 1, "circuit": "X", "year": year, "driver_number": driver, "lap_number": lap,
             "lap_duration": duration, "is_clean": duration is not None and not reasons,
-            "compound": compound, "stint_number": stint, "tyre_age": age, "exclusion_reasons": list(reasons)}
+            "compound": compound, "stint_number": stint, "tyre_age": age, "exclusion_reasons": list(reasons),
+            "race_fraction": lap / 4}
 
 
 # 4-lap race. Car 1: MEDIUM laps 1-2 (ages 0, 1), pits on lap 2, HARD laps 3-4 (ages 0, 1),
@@ -205,6 +206,16 @@ def test_driver_choices_only_full_distance_with_reference():
     assert driver_choices(DRIVER_RACE, "X", 2024) == [1]
 
 
+def test_driver_choices_with_model_needs_clean_first_half_laps():
+    # Car 1 has 2 clean first-half laps. Make lap 1 unclean: only 1 left, so 2 are needed -> out.
+    race = [{**r, "is_clean": False} if r["driver_number"] == 1 and r["lap_number"] == 1 else r
+            for r in DRIVER_RACE]
+
+    assert driver_choices(race, "X", 2024, StubModel(), min_clean_laps=2) == []
+    assert driver_choices(race, "X", 2024, StubModel(), min_clean_laps=1) == [1]
+    assert driver_choices(race, "X", 2024) == [1]    # without a model, one clean lap is enough
+
+
 def test_driver_choices_rejects_safety_car_race():
     race = [{**r, "exclusion_reasons": ["safety_car"]} if r["lap_number"] == 2 else r for r in DRIVER_RACE]
 
@@ -213,14 +224,15 @@ def test_driver_choices_rejects_safety_car_race():
 
 
 def test_compare_driver_hand_example():
-    result = compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 1)
+    result = compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 1, min_clean_laps=2)
 
     assert result["actual_strategy"] == {"compounds": ["MEDIUM", "HARD"], "pit_laps": [2], "start_ages": [0, 0]}
-    assert result["settings"]["reference_lap"] == pytest.approx(100.5)
+    # Pace from laps 1-2: model deltas 0.25 and 0.6, so median(105 - 0.25, 100 - 0.6) = 102.075.
+    assert result["settings"]["reference_lap"] == pytest.approx(102.075)
     assert result["actual_time"] == pytest.approx(405.0)
-    # 4 * 100.5 + wear 0.2 + fuel 2.5 + one stop 20.0 = 424.7
-    assert result["simulated_actual"] == pytest.approx(424.7)
-    assert result["model_error"] == pytest.approx(19.7)
+    # 4 * 102.075 + wear 0.2 + fuel 2.5 + one stop 20.0 = 431.0
+    assert result["simulated_actual"] == pytest.approx(431.0)
+    assert result["model_error"] == pytest.approx(26.0)
     gaps = {r["strategy"]: r["gap"] for r in result["ranking"]}
     assert gaps["actual"] == pytest.approx(0.0)
     # 1stop_MH_late on 4 laps pits on lap 2 with new sets: the same as the real strategy.
@@ -231,7 +243,7 @@ def test_compare_driver_hand_example():
 
 def test_compare_driver_rejects_driver_without_full_race():
     with pytest.raises(ValueError, match="Car 2"):
-        compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 2)
+        compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 2, min_clean_laps=2)
 
 
 def ranges_row(strategy, gap, low, high, confidence, flagged=False):
@@ -318,7 +330,7 @@ def test_compare_driver_candidates_start_on_the_real_first_set():
     race = [{**r, "tyre_age": r["tyre_age"] + 3} if r["driver_number"] == 1 and r["stint_number"] == 1 else r
             for r in DRIVER_RACE]
 
-    strategies = compare_driver(race, INPUTS, "X", 2024, 1)["strategies"]
+    strategies = compare_driver(race, INPUTS, "X", 2024, 1, min_clean_laps=2)["strategies"]
 
     assert strategies["actual"]["start_ages"] == [3, 0]
     assert strategies["1stop_MH_late"]["start_ages"] == [3, 0]     # starts on MEDIUM, like car 1

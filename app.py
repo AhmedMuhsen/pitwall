@@ -69,13 +69,13 @@ except FileNotFoundError:
 races = {f"{circuit} {year}": (year, circuit) for year, circuit in comparable_races(rows)}
 year, circuit = races[st.sidebar.selectbox("Race", list(races))]
 st.sidebar.caption("Races without a safety car only: the simulator has none, so real times wouldn't compare.")
-drivers = driver_choices(rows, circuit, year)
+drivers = driver_choices(rows, circuit, year, inputs["model"])
 if not drivers:
     st.error(f"No driver at {circuit} {year} ran every lap with a time, so there is nothing to compare.")
     st.stop()
 cars = {f"Car #{d}": d for d in drivers}
 driver = cars[st.sidebar.selectbox("Car", list(cars))]
-st.sidebar.caption("Cars that finished on the lead lap with a time on every lap.")
+st.sidebar.caption("Cars that finished on the lead lap with a time on every lap and enough clean laps in the first half to measure their pace.")
 
 try:
     result = compare_driver(rows, inputs, circuit, year, driver)
@@ -160,7 +160,7 @@ with left:
         st.metric("Real race time", race_clock(result["actual_time"]))
         st.metric("Model, same strategy", race_clock(result["simulated_actual"]),
                   delta=f"{result['model_error']:+.1f} s vs real", delta_color="off")
-        st.caption("Across safety-car-free races the model's race total was off by about 12 s on average. "
+        st.caption("Across safety-car-free races the model's race total was off by about 10 s on average. "
                    "Much of that error is shared by every strategy in a race, so the gaps above are more "
                    "reliable than the totals. The bars show the part that isn't shared.")
         actual_flags = next(row["flags"] for row in result["ranking"] if row["strategy"] == BASELINE)
@@ -233,6 +233,6 @@ with st.expander("Assumptions and limitations"):
   and extra stops.
 - **Accuracy:** on 2025 races (never used to build the model) the lap-time error is 0.61 s per clean
   lap, against 0.79 s for always predicting the driver's normal lap. Race totals for real
-  strategies were off by about 12 s on average in the backtest.
+  strategies were off by about 10 s on average in the backtest.
 - This compares a small fixed set of strategies under a model. It does not find an optimal strategy.
 """)

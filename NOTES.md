@@ -386,3 +386,18 @@ e.g. how much its slope varies between races and years, then choose P_1e5 vs B.
 
 Still unclear: Whether a per-race race-lap slope is learnable at all before a
 race (it may only be a limitation). Monza 2023's error is mostly lap 1 (+4.2 s).
+
+## 2026-11-17 Session 24
+
+Done: residual_trends in analysis.py (per race: leftover slope on race_fraction
+plus a tyre-age slope per compound; refuses collinear races) and
+print_residual_trends in evaluate.py. The drift isn't only race-lap: leftover
+wear of 0.04-0.07 s/lap of age at Sakhir 2024 and Monza 2024 for both models.
+Chose P_1e5 (DECISIONS 2026-11-17).
+
+Next: Session 25: Week 7, compare a small set of strategies with P_1e5 and add
+sensitivity to pit loss (q25-q75) and wear rate (±0.05 s/lap).
+
+Still unclear: Which years train the final model (2023+2024?). Fuel and wear
+within one race are only roughly separable (Monza 2023: naive wear slope +0.029,
+joint fit 0.000).

@@ -638,3 +638,26 @@ One entry per real decision. Format:
 - **What would make us reconsider** — Lap-1 loss varying a lot by grid
   position (front vs back), or the error split showing lap 1 carries much of
   the race-wide bias.
+
+## 2026-11-17 — Final model: PooledWearModel, alpha 1e5 (P_1e5)
+
+- **Decision** — The simulator and app use `PooledWearModel(alpha=100_000,
+  fuel_column="race_fraction")`: one shared wear rate plus per compound@circuit
+  adjustments pulled toward it. Which years train the final model is still open.
+- **Requirement** — Rule 3 (wear varies by circuit) and rule 3d (pooled linear
+  first, extra structure only for a shown problem). Week 7 needs one model to
+  compare strategies with.
+- **Options** — (a) P_1e5. (b) B_frac (one wear rate for all pairs). (c) Keep
+  it open and study the race-lap term further.
+- **Choice and reason** — (a). On the cross-year backtest the two models are
+  about the same (MAE 11.81 vs 11.91 s over 76 driver-races). Their errors split
+  the same way (Session 23: lap 1 and stops within about ±4 s per race, most of
+  the bias on normal laps), and their leftover slopes match (`residual_trends`:
+  race-lap slopes up to +1.4 / -1.0 s over the race, tyre-age slopes up to
+  0.04-0.07 s per lap at Sakhir and Monza 2024). With no evidence either way,
+  rule 3 decides. (b) breaks rule 3. (c) won't settle it: the split between
+  fuel and wear within a race is only approximate (rule 3b).
+- **What would make us reconsider** — A strategy ranking that depends on a
+  per-pair adjustment fitted on few laps, P_1e5 doing clearly worse than B_frac
+  on the 2025 test, or the ±0.05 s/lap wear sensitivity in Week 7 showing that
+  per-circuit wear changes no ranking (then B_frac is enough).

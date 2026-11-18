@@ -1,7 +1,7 @@
 from pitwall.analysis import average_lap_time_by_tyre_age
 from pitwall.analysis import max_clean_tyre_age
 from pitwall.analysis import median_clean_lap_by_race_lap
-from pitwall.analysis import lap_one_losses, pit_loss_by_circuit, stop_losses
+from pitwall.analysis import lap_one_losses, pit_loss_by_circuit, residual_trends, stop_losses
 import pytest
 
 def test_empty_lap_raises():
@@ -224,3 +224,75 @@ def test_lap_one_losses_skips_lap_model_cannot_predict():
 
     assert result[1]["loss"] == pytest.approx(6.98)
     assert (result[2]["loss"], result[2]["skip_reason"]) == (None, "model_cannot_predict")
+
+
+class ZeroModel:
+    """Predicts a delta of 0, so the residual is the delta itself; refuses compounds in `unseen`."""
+
+    def __init__(self, unseen=()):
+        self.unseen = set(unseen)
+
+    def predict(self, X):
+        if set(X["compound"]) & self.unseen:
+            raise ValueError("unseen compound")
+        return [0.0] * len(X)
+
+
+def trend_rows(delta):
+    """20-lap race, two drivers with different pit laps and a used set, so race lap and tyre ages separate.
+    delta(race_fraction, compound, tyre_age) gives each lap's delta."""
+    rows = []
+    stints = {1: [("SOFT", 1, 10, 0), ("HARD", 11, 20, 0)], 2: [("HARD", 1, 6, 0), ("SOFT", 7, 20, 5)]}
+    for driver, driver_stints in stints.items():
+        for compound, first, last, start_age in driver_stints:
+            for lap in range(first, last + 1):
+                age = start_age + lap - first
+                rows.append({"session_key": 7, "circuit": "X", "year": 2024, "driver_number": driver,
+                             "lap_number": lap, "compound": compound, "tyre_age": age,
+                             "race_fraction": lap / 20, "is_clean": True,
+                             "delta": delta(lap / 20, compound, age)})
+    return rows
+
+
+def test_residual_trends_finds_pure_race_lap_drift():
+    rows = trend_rows(lambda frac, compound, age: 2.0 * frac)
+
+    result = {r["compound"]: r for r in residual_trends(rows, ZeroModel(), min_laps=5)}
+
+    for compound in ("SOFT", "HARD"):
+        assert result[compound]["race_fraction_slope"] == pytest.approx(2.0)
+        assert result[compound]["tyre_age_slope"] == pytest.approx(0.0, abs=1e-9)
+        assert result[compound]["skip_reason"] is None
+    assert result["SOFT"]["n_laps"] == 24 and result["HARD"]["n_laps"] == 16
+
+
+def test_residual_trends_finds_wear_per_compound():
+    rows = trend_rows(lambda frac, compound, age: 0.5 + (0.1 if compound == "SOFT" else 0.03) * age)
+
+    result = {r["compound"]: r for r in residual_trends(rows, ZeroModel(), min_laps=5)}
+
+    assert result["SOFT"]["tyre_age_slope"] == pytest.approx(0.1)
+    assert result["HARD"]["tyre_age_slope"] == pytest.approx(0.03)
+    assert result["SOFT"]["race_fraction_slope"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_residual_trends_skips_small_and_unpredictable_compounds():
+    rows = trend_rows(lambda frac, compound, age: 2.0 * frac)
+
+    result = {r["compound"]: r for r in residual_trends(rows, ZeroModel(), min_laps=20)}
+    assert result["HARD"]["skip_reason"] == "too_few_laps" and result["HARD"]["tyre_age_slope"] is None
+    assert result["SOFT"]["skip_reason"] is None
+
+    result = {r["compound"]: r for r in residual_trends(rows, ZeroModel(unseen=["SOFT", "HARD"]), min_laps=5)}
+    assert result["SOFT"]["skip_reason"] == "model_cannot_predict"
+    assert result["HARD"]["skip_reason"] == "model_cannot_predict"
+
+
+def test_residual_trends_refuses_collinear_race():
+    # One driver, one stint per compound, all new sets: race lap and tyre ages are tied together.
+    rows = [r for r in trend_rows(lambda frac, compound, age: 2.0 * frac) if r["driver_number"] == 1]
+
+    result = residual_trends(rows, ZeroModel(), min_laps=5)
+
+    assert {r["skip_reason"] for r in result} == {"collinear"}
+    assert all(r["race_fraction_slope"] is None for r in result)

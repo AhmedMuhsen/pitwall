@@ -1,6 +1,7 @@
 from collections import defaultdict
 from statistics import median, quantiles
 
+import numpy as np
 import pandas as pd
 
 def average_lap_time_by_tyre_age(laps):
@@ -203,4 +204,82 @@ def lap_one_losses(rows: list[dict], model) -> list[dict]:
         if loss is None:
             record["skip_reason"] = "model_cannot_predict"
         record["loss"] = loss
+    return records
+
+
+def residual_trends(rows: list[dict], model, min_laps: int = 30) -> list[dict]:
+    '''
+    How the model's leftover error (actual minus predicted delta) moves with
+    race lap and with tyre age, per race: separates a race-lap (fuel, track
+    evolution) error, which is the same for every strategy, from a wear error,
+    which changes strategy rankings.
+
+    rows: dataset rows with "session_key", "circuit", "year", "is_clean",
+        "delta" (None if no reference) and the model's inputs ("compound",
+        "tyre_age", "race_fraction")
+    model: fitted model whose predict(DataFrame) returns delta in seconds;
+        for a fair check, fitted without these races
+    min_laps: a compound with fewer clean laps in a race is left out of the fit
+
+    returns: one dict per race and compound with "circuit", "year",
+        "session_key", "compound", "n_laps" (clean laps of that compound),
+        "race_fraction_slope" (seconds over the whole race, shared by every
+        compound in the race), "tyre_age_slope" (seconds per lap of tyre age
+        for this compound) and "skip_reason". Per race, one linear fit:
+        residual ~ race_fraction + per compound (level + tyre_age slope).
+        Slopes are None, with skip_reason "too_few_laps" or
+        "model_cannot_predict" (that compound), or "no_compound_fitted" /
+        "collinear" (race_fraction and tyre ages can't be separated, every
+        compound in the race).
+    '''
+    races = defaultdict(lambda: defaultdict(list))
+    for row in rows:
+        if row["is_clean"] and row["delta"] is not None:
+            races[row["session_key"]][row["compound"]].append(row)
+
+    records = []
+    for session_key, by_compound in races.items():
+        first = next(iter(by_compound.values()))[0]
+        race_records, fitted = {}, []  # fitted: (compound, rows, residuals)
+        for compound, compound_rows in sorted(by_compound.items()):
+            race_records[compound] = {"circuit": first["circuit"], "year": first["year"],
+                                      "session_key": session_key, "compound": compound,
+                                      "n_laps": len(compound_rows), "race_fraction_slope": None,
+                                      "tyre_age_slope": None, "skip_reason": None}
+            if len(compound_rows) < min_laps:
+                race_records[compound]["skip_reason"] = "too_few_laps"
+                continue
+            try:
+                predicted = model.predict(pd.DataFrame(compound_rows))
+            except ValueError:
+                race_records[compound]["skip_reason"] = "model_cannot_predict"
+                continue
+            residuals = [row["delta"] - p for row, p in zip(compound_rows, predicted)]
+            fitted.append((compound, compound_rows, residuals))
+
+        if not fitted:
+            for record in race_records.values():
+                record["skip_reason"] = record["skip_reason"] or "no_compound_fitted"
+        else:
+            # Columns: race_fraction, then per compound a level and a tyre_age slope.
+            X, y = [], []
+            for i, (_, compound_rows, residuals) in enumerate(fitted):
+                for row, residual in zip(compound_rows, residuals):
+                    columns = [0.0] * (1 + 2 * len(fitted))
+                    columns[0] = row["race_fraction"]
+                    columns[1 + 2 * i] = 1.0
+                    columns[2 + 2 * i] = row["tyre_age"]
+                    X.append(columns)
+                    y.append(residual)
+            X = np.array(X)
+            # lstsq would quietly return one of many answers if columns are dependent.
+            if np.linalg.matrix_rank(X) < X.shape[1]:
+                for compound, _, _ in fitted:
+                    race_records[compound]["skip_reason"] = "collinear"
+            else:
+                coefficients = np.linalg.lstsq(X, np.array(y), rcond=None)[0]
+                for i, (compound, _, _) in enumerate(fitted):
+                    race_records[compound]["race_fraction_slope"] = float(coefficients[0])
+                    race_records[compound]["tyre_age_slope"] = float(coefficients[2 + 2 * i])
+        records += race_records.values()
     return records

@@ -6,7 +6,7 @@ import pyarrow.parquet as pq
 from pitwall.evaluation import leave_one_race_out, score, score_by_group, split_by_year, leave_one_year_out
 from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel, build_pipeline
-from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, stop_losses
+from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
 from pitwall.backtest import backtest_race
 from pitwall.simulator import observed_max_ages
 
@@ -200,6 +200,38 @@ def print_error_split(rows):
         print(drift.round(2).to_string())
 
 
+def fuel_coefficient(model):
+    """Fitted race_fraction coefficient (seconds over the whole race) of a B pipeline or a PooledWearModel."""
+    if isinstance(model, PooledWearModel):
+        names, coefficients = model.columns_.get_feature_names_out(), model.coef_
+    else:
+        names = model.named_steps["preprocessor"].get_feature_names_out()
+        coefficients = model.named_steps["regressor"].coef_
+    return float(dict(zip(names, coefficients))["pass__race_fraction"])
+
+
+def print_residual_trends(rows):
+    """Leftover race-lap and per-compound tyre-age slopes on the safety-car-free backtest races,
+    each race scored by a model fitted on the other year. Tyre-age slopes near 0 mean the
+    backtest drift is race-lap error, which every strategy in a race shares."""
+    for name, alpha in (("B_frac", None), ("P_100000", 100_000)):
+        records = []
+        for year, fold_train, fold_validation in leave_one_year_out(rows, [2023, 2024]):
+            model = fit_model(True, False, fold_train, "race_fraction", alpha)
+            print(f"  {name} fitted without {year}: fuel coefficient {fuel_coefficient(model):+.2f}s over the race")
+            safety_car = {r["session_key"] for r in fold_validation if "safety_car" in r["exclusion_reasons"]}
+            records += residual_trends([r for r in fold_validation if r["session_key"] not in safety_car], model)
+        df = pd.DataFrame(records)
+        print(f"\nResidual trends, {name} (race_fraction: s over the race; tyre_age: s per lap of age)")
+        print(df.pivot_table(index=["year", "circuit"], values="race_fraction_slope", aggfunc="first")
+                .round(2).to_string())
+        print(df.pivot_table(index=["year", "circuit"], columns="compound", values="tyre_age_slope",
+                             aggfunc="first").round(3).to_string())
+        laps = df.pivot_table(index=["year", "circuit"], columns="compound", values="n_laps", aggfunc="first")
+        print("clean laps per compound:\n" + laps.to_string())
+        print("skip reasons:", df["skip_reason"].value_counts().to_dict())
+
+
 def print_held_out_2024(train):
     """Models on held-out 2024 races: overall, then B (fuel by lap) vs B_frac (fuel by race fraction)."""
     print("\nHeld-out 2024 races (fit on the other four), clean laps")
@@ -275,6 +307,7 @@ def main():
     print_cross_year(rows)
     print_cross_year_backtest(rows)
     print_error_split(rows)
+    print_residual_trends(rows)
 
 
 if __name__ == "__main__":

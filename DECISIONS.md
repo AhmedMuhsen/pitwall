@@ -661,3 +661,75 @@ One entry per real decision. Format:
   per-pair adjustment fitted on few laps, P_1e5 doing clearly worse than B_frac
   on the 2025 test, or the ±0.05 s/lap wear sensitivity in Week 7 showing that
   per-circuit wear changes no ranking (then B_frac is enough).
+
+## 2026-11-18 — Final model trains on 2023+2024; wear sensitivity is ±q75 of held-out error
+
+- **Decision** — P_1e5 is fitted on 2023+2024 for the simulator, app and final 2025 test.
+  Wear sensitivity uses ±0.032 s/lap, the 75th percentile of |leftover tyre-age slope| on
+  held-out years (`comparison.fit_inputs`).
+- **Requirement** — Rule 4 (2025 never used for selection), Week 7 task 4 (uncertainty
+  values must come from somewhere documented).
+- **Options** — Training years: 2023+2024, 2024 only, add 2025. Wear range: ±0.05 (by
+  hand), year-to-year change in fitted rates (max 0.015, shrunk by pooling), ±q75 of
+  held-out error (0.032).
+- **Choice and reason** — 2023+2024 (more laps per pair, 2025 stays held out) and ±q75
+  (measures how wrong the wear rate was on an unseen year).
+- **What would make us reconsider** — More races per circuit, or a wear model change that
+  moves the held-out error.
+
+## 2026-11-18 — Wear stays linear; the 2025 old-tyre bias is a year effect
+
+- **Decision** — No curved wear term. The 2025 old-tyre bias (+0.25 s at age 20-29,
+  +0.71 s at 30+) is reported as a limitation.
+- **Requirement** — Rule 3d and rule 4.
+- **Options** — Keep linear and document it; include 2025 in training; fit a flattening curve.
+- **Choice and reason** — Keep linear. Cross-year 2023/24 bias is within ±0.07 s up to age
+  39 (11,000+ laps); only 40+ drifts (-0.33 s, 55 laps), the other way. A curve chosen on
+  2023/24 would come out near linear; one chosen to fix 2025 would be tuning to the test.
+- **What would make us reconsider** — 2023/24 data or added races showing the bias at old
+  ages, or a decision to train on 2025.
+
+## 2026-11-18 — The app compares one driver's real strategy with alternatives
+
+- **Decision** — Pick a race and a driver (SPEC section 1); alternatives are ranked against
+  the simulated time of the driver's real strategy, on safety-car-free races 2023-2025.
+  Alternatives start on the real first set when they start on the same compound.
+- **Requirement** — SPEC sections 1 and 3; the simulator had no safety car.
+- **Options** — Races: safety-car-free only, or all 15 with the safety-car ones marked.
+  Gaps against: the simulated real strategy, or the real race time.
+- **Choice and reason** — Safety-car-free only; gaps against the simulated real strategy so
+  the model's shared race error cancels.
+- **What would make us reconsider** — Modelling safety cars (planned, see v2 below).
+
+## 2026-11-18 — Strategy gaps are validated on pairs of cars, with pace from the first half
+
+- **Decision** — The check of "does the simulator get strategy differences right" uses pairs
+  of cars with different strategies in one race. Each car's pace is the median of
+  (lap time - model delta) over its first-half clean laps; only the second half is scored.
+- **Requirement** — The app shows gaps between strategies, which a race-total backtest does
+  not test.
+- **Options** — Whole-race median pace (what the app used); first-half raw median; first-half
+  model-adjusted pace.
+- **Choice and reason** — First-half model-adjusted. Whole-race pace already contains the
+  strategy's effect, so that test was close to a coin flip (52% right) and says little.
+  Model-adjusted over the whole race would be circular. First-half adjusted had the lowest
+  error (10.8 s vs 11.8 s raw) with held-out scored laps.
+- **What would make us reconsider** — A same-car-two-strategies data source, or a
+  strategy-pair result that shifts a lot with a different split point.
+
+## 2026-11-18 — v2 scope: traffic (replayed field) and replayed real safety cars, after v1
+
+- **Decision** — After the v1 Definition of Done, v2 adds (1) traffic: one simulated car
+  against the real field replayed from its real lap times, with a time penalty close behind
+  slower cars, then (2) safety cars at the laps they really happened: fixed slow laps, a
+  reduced pit loss. Random (probabilistic) safety cars stay out of scope.
+- **Requirement** — The model prefers evenly split stints for most cars because it has no
+  reason to pit early or late; traffic and safety cars are two such reasons. CLAUDE.md listed
+  traffic as out of scope for v1.
+- **Options** — Finish v1 then v2; validation then v2 then deploy last; start v2 now. Safety
+  cars: replay the real ones, or random ones.
+- **Choice and reason** — Finish v1 first, replay real safety cars. v1 gives a finished,
+  honest project and the pair check is the yardstick v2 must beat. Random safety cars need a
+  probability we can't estimate from 4 races.
+- **What would make us reconsider** — Traffic penalty not being estimable from lap timing, or
+  v2 failing to improve the yardstick (then it stays off by default).

@@ -401,3 +401,21 @@ sensitivity to pit loss (q25-q75) and wear rate (±0.05 s/lap).
 Still unclear: Which years train the final model (2023+2024?). Fuel and wear
 within one race are only roughly separable (Monza 2023: naive wear slope +0.029,
 joint fit 0.000).
+
+## 2026-11-18 Sessions 25-30
+
+Done: comparison.py (candidate_strategies, compare_strategies, sensitivity,
+compare_driver, gap_ranges, verdict, cumulative_gap) and app.py (Streamlit: pick a
+safety-car-free race and a car, real strategy vs 5 alternatives, dot-and-range chart).
+Final model P_1e5 trained on 2023+2024; scored once on 2025: clean MAE 0.612 s vs
+zero baseline 0.792, bias +0.146 (old tyres 30+ laps: bias +0.71, a 2025 effect, not
+seen in 2023/24). Wear sensitivity ±0.032 s/lap (q75 of held-out wear error).
+Strategy-pair check (pace from first half, scored on second half): MAE 11.2 s cross-year
+and 10.9 s on 2025 vs 12.8 / 15.7 s for zero; picks the faster car 70% / 76% of the time
+when the real gap is over 5 s, but only about 50% when the predicted gap is under 3 s.
+
+Next: v1 finish (verdict tiers from these numbers, custom strategy input, README, CI,
+deploy notes), then v2: traffic and replayed real safety cars (DECISIONS 2026-11-18).
+
+Still unclear: The model prefers another strategy for most cars (even-stint bias).
+How the deployed app gets data/processed (gitignored). Not checked in a real browser.

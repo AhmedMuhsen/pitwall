@@ -8,8 +8,7 @@ from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel, build_pipeline
 from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
 from pitwall.backtest import backtest_race
-from pitwall.comparison import candidate_strategies, sensitivity
-from pitwall.processing import race_distance
+from pitwall.comparison import BASELINE, TRAIN_YEARS, compare_race, fastest_by_scenario, fit_inputs, load_dataset
 from pitwall.simulator import observed_max_ages
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")
@@ -266,48 +265,25 @@ def print_held_out_2024(train):
         print(drift.round(2).to_string())
 
 
-def held_out_wear_error(rows):
-    """Leftover tyre-age slopes (s per lap of age) of P_1e5 on the safety-car-free 2023 and 2024
-    races, each race scored by a model fitted on the other year: how far off the wear rate was
-    on a year the model didn't see. One value per compound per race (residual_trends)."""
-    records = []
-    for _, fold_train, fold_validation in leave_one_year_out(rows, [2023, 2024]):
-        model = fit_model(True, False, fold_train, "race_fraction", 100_000)
-        safety_car = {r["session_key"] for r in fold_validation if "safety_car" in r["exclusion_reasons"]}
-        records += residual_trends([r for r in fold_validation if r["session_key"] not in safety_car], model)
-    return pd.Series([r["tyre_age_slope"] for r in records if r["tyre_age_slope"] is not None])
-
-
 def print_strategy_comparison(rows):
     """Candidate strategies ranked at each circuit's 2024 race by P_1e5 fitted on 2023+2024
     (DECISIONS 2026-11-17), then re-ranked with pit loss at q25/q75 and wear ± the 75th
     percentile of the held-out wear error."""
-    slopes = held_out_wear_error(rows).abs()
-    wear_range = float(slopes.quantile(0.75))
+    inputs = fit_inputs(rows, TRAIN_YEARS)
+    slopes = pd.Series(inputs["held_out_wear_errors"])
     print(f"\nHeld-out wear error, |s per lap of age| over {len(slopes)} compound-races: median "
-          f"{slopes.median():.3f}, q75 {wear_range:.3f}, max {slopes.max():.3f}; sensitivity uses ±q75")
-    train_years = [2023, 2024]
-    train = [row for row in rows if row["year"] in train_years]
-    model = fit_model(True, False, train, "race_fraction", 100_000)
+          f"{slopes.median():.3f}, q75 {inputs['wear_range']:.3f}, max {slopes.max():.3f}; sensitivity uses ±q75")
+    model = inputs["model"]
     names = model.columns_.get_feature_names_out()
-    print(f"\nStrategy comparison, P_1e5 fitted on {train_years}: shared wear rate "
+    print(f"\nStrategy comparison, P_1e5 fitted on {TRAIN_YEARS}: shared wear rate "
           f"{dict(zip(names, model.coef_))['pass__tyre_age']:+.3f} s/lap")
-    pit_loss = pit_loss_by_circuit(stop_losses(train, model), train_years)
-    lap_one = pit_loss_by_circuit(lap_one_losses(train, model), train_years)
-    max_ages = observed_max_ages(max_clean_tyre_age(train), train_years)
 
     for circuit in sorted({row["circuit"] for row in rows}):
-        race = [row for row in rows if row["circuit"] == circuit and row["year"] == 2024]
-        distance = race_distance(race)
-        # Reference lap and lap-1 loss add the same time to every strategy, so they can't change a ranking.
-        reference = median(driver_reference_laps(race).values())
-        losses = {label: pit_loss[circuit][label] for label in ("q25", "median", "q75")}
-        df = pd.DataFrame(sensitivity(candidate_strategies(distance), distance, circuit, model, reference,
-                                      losses, lap_one[circuit]["median"], max_ages, "1stop_MH_early",
-                                      [-wear_range, 0.0, wear_range]))
-        base = df[(df["pit_loss_label"] == "median") & (df["wear_offset"] == 0.0)]
-        print(f"\n{circuit} 2024, {distance} laps, pit loss q25/median/q75 "
-              + "/".join(f"{v:.1f}" for v in losses.values()) + " s; gap to 1stop_MH_early (s)")
+        result = compare_race(rows, inputs, circuit, 2024)
+        settings = result["settings"]
+        base = pd.DataFrame(result["ranking"])
+        print(f"\n{circuit} 2024, {settings['race_distance']} laps, pit loss q25/median/q75 "
+              + "/".join(f"{v:.1f}" for v in settings["pit_losses"].values()) + f" s; gap to {BASELINE} (s)")
         print(base[["rank", "strategy", "total", "gap"]].round(1).to_string(index=False))
         for row in base.itertuples():
             for flag in row.flags:
@@ -315,10 +291,8 @@ def print_strategy_comparison(rows):
             if row.error:
                 print(f"    {row.strategy} refused: {row.error}")
 
-        winners = df[df["rank"] == 1].pivot_table(index="pit_loss_label", columns="wear_offset",
-                                                  values="strategy", aggfunc="first")
         print("  fastest strategy by pit loss (rows) and wear offset s/lap (columns):")
-        print(winners.loc[["q25", "median", "q75"]].rename(columns=lambda c: f"{c:+.3f}").to_string())
+        print(fastest_by_scenario(result["sensitivity"]).rename(columns=lambda c: f"{c:+.3f}").to_string())
 
 
 def print_final_test(rows):
@@ -358,10 +332,7 @@ def print_final_test(rows):
 
 
 def main():
-    rows = pq.read_table(DATASET_PATH).to_pylist()
-    # Each race's reference comes from that race's own clean laps (DECISIONS 2026-11-12).
-    rows = add_delta(rows, driver_reference_laps(rows))
-    rows = add_race_fraction(rows)
+    rows = load_dataset(DATASET_PATH)
     # 2023 rows are left out here; they're for cross-year validation (leave_one_year_out).
     train, test = split_by_year(rows, [2024], [2025])
     print(f"train (2024): {len(train)} rows, test (2025): {len(test)} rows")

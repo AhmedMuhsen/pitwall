@@ -1,5 +1,22 @@
 """Compares a small set of strategies with the simulator and tests how assumptions change the ranking."""
-from pitwall.simulator import simulate, validate_strategy
+from collections import defaultdict
+from statistics import median
+
+import pandas as pd
+import pyarrow.parquet as pq
+
+from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
+from pitwall.backtest import actual_strategy
+from pitwall.evaluation import leave_one_year_out
+from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
+from pitwall.model import PooledWearModel
+from pitwall.processing import race_distance
+from pitwall.simulator import observed_max_ages, simulate, validate_strategy
+
+# Final model and training years: DECISIONS 2026-11-17 and 2026-11-18.
+FINAL_ALPHA = 100_000
+TRAIN_YEARS = [2023, 2024]
+BASELINE = "1stop_MH_early"
 
 
 def candidate_strategies(race_distance: int) -> dict[str, dict]:
@@ -107,3 +124,387 @@ def sensitivity(strategies: dict[str, dict], race_distance: int, circuit: str, m
                                           pit_loss, lap_one_loss, max_ages, baseline, offset):
                 rows.append({"pit_loss_label": label, "pit_loss": pit_loss, "wear_offset": offset, **row})
     return rows
+
+
+def load_dataset(path) -> list[dict]:
+    '''
+    Processed lap dataset rows, ready for the model.
+
+    path: the lap dataset parquet file (data/processed/lap_dataset.parquet)
+
+    returns: list of dicts, one per lap, with "delta" (lap time minus the
+    driver's median clean lap in that race, None if either is missing) and
+    "race_fraction" added.
+
+    raises FileNotFoundError if the file doesn't exist, ValueError if it has no rows.
+    '''
+    rows = pq.read_table(path).to_pylist()
+    # Each race's reference comes from that race's own clean laps (DECISIONS 2026-11-12).
+    rows = add_delta(rows, driver_reference_laps(rows))
+    return add_race_fraction(rows)
+
+
+def fit_final_model(rows: list[dict]) -> PooledWearModel:
+    '''
+    The final model, PooledWearModel(FINAL_ALPHA, "race_fraction"), fitted on the
+    clean rows that have a delta.
+
+    rows: load_dataset rows for the training years only
+    returns: the fitted model
+    raises ValueError if no row is clean with a delta.
+    '''
+    train = pd.DataFrame([r for r in rows if r["is_clean"] and r["delta"] is not None])
+    if train.empty:
+        raise ValueError("No clean laps with a delta to fit on")
+    return PooledWearModel(FINAL_ALPHA, "race_fraction").fit(train, train["delta"])
+
+
+def held_out_wear_errors(rows: list[dict], years: list[int]) -> list[float]:
+    '''
+    How far off the wear rate was on a year the model didn't see.
+
+    rows: load_dataset rows
+    years: the years to swap, e.g. [2023, 2024]: each year's safety-car-free
+        races are scored by the final model fitted on the other years
+
+    returns: |leftover tyre-age slope| in seconds per lap of age, one per
+    compound per race (analysis.residual_trends); compounds it skips are left out.
+    '''
+    errors = []
+    for _, fold_train, fold_validation in leave_one_year_out(rows, years):
+        model = fit_final_model(fold_train)
+        safety_car = {r["session_key"] for r in fold_validation if "safety_car" in r["exclusion_reasons"]}
+        trends = residual_trends([r for r in fold_validation if r["session_key"] not in safety_car], model)
+        errors += [abs(t["tyre_age_slope"]) for t in trends if t["tyre_age_slope"] is not None]
+    return errors
+
+
+def fit_inputs(rows: list[dict], train_years: list[int] = TRAIN_YEARS) -> dict:
+    '''
+    Everything the comparison needs that is estimated from the training years.
+
+    rows: load_dataset rows (any years; only train_years are used)
+    train_years: years to fit on
+
+    returns: dict with
+        "model": fit_final_model on train_years
+        "pit_loss": analysis.pit_loss_by_circuit dict (median, q25, q75 per circuit)
+        "lap_one_loss": dict circuit -> median lap-1 loss in seconds
+        "max_ages": dict (circuit, compound) -> oldest clean tyre age
+        "held_out_wear_errors": held_out_wear_errors over train_years
+        "wear_range": 75th percentile of those errors (s per lap of age),
+            the wear sensitivity range (DECISIONS 2026-11-18)
+
+    raises ValueError if fewer than two train_years (the wear range needs a
+    held-out year) or a year has no rows.
+    '''
+    if len(train_years) < 2:
+        raise ValueError(f"Need at least two training years for the wear range, got {train_years}")
+    train = [r for r in rows if r["year"] in train_years]
+    missing = set(train_years) - {r["year"] for r in train}
+    if missing:
+        raise ValueError(f"No rows for year(s): {sorted(missing)}")
+    model = fit_final_model(train)
+    lap_one = pit_loss_by_circuit(lap_one_losses(train, model), train_years)
+    errors = held_out_wear_errors(rows, train_years)
+    return {
+        "model": model,
+        "pit_loss": pit_loss_by_circuit(stop_losses(train, model), train_years),
+        "lap_one_loss": {circuit: values["median"] for circuit, values in lap_one.items()},
+        "max_ages": observed_max_ages(max_clean_tyre_age(train), train_years),
+        "held_out_wear_errors": errors,
+        "wear_range": float(pd.Series(errors).quantile(0.75)),
+    }
+
+
+def race_settings(rows: list[dict], inputs: dict, circuit: str, year: int) -> dict:
+    '''
+    The race-specific values for comparing strategies at one race.
+
+    rows: load_dataset rows
+    inputs: fit_inputs result
+    circuit, year: the race
+
+    returns: dict with "race_distance" (laps), "reference_lap" (median of the
+    drivers' median clean laps in that race, seconds), "pit_losses" (dict
+    "q25"/"median"/"q75" -> seconds) and "lap_one_loss" (seconds). The
+    reference lap and lap-1 loss add the same time to every strategy, so they
+    change totals but never a ranking.
+
+    raises ValueError if the race isn't in rows, or the circuit has no pit
+    loss or lap-1 loss in the training years.
+    '''
+    race = [r for r in rows if r["circuit"] == circuit and r["year"] == year]
+    if not race:
+        raise ValueError(f"No race for {circuit} {year} in the dataset")
+    if circuit not in inputs["pit_loss"]:
+        raise ValueError(f"No measured pit stops at {circuit} in the training years")
+    if circuit not in inputs["lap_one_loss"]:
+        raise ValueError(f"No lap-1 loss at {circuit} in the training years")
+    return {
+        "race_distance": race_distance(race),
+        "reference_lap": median(driver_reference_laps(race).values()),
+        "pit_losses": {label: inputs["pit_loss"][circuit][label] for label in ("q25", "median", "q75")},
+        "lap_one_loss": inputs["lap_one_loss"][circuit],
+    }
+
+
+def compare_race(rows: list[dict], inputs: dict, circuit: str, year: int) -> dict:
+    '''
+    The candidate strategies at one race: ranking, sensitivity and lap times.
+
+    rows, inputs, circuit, year: as in race_settings
+
+    returns: dict with
+        "settings": race_settings result
+        "ranking": compare_strategies rows at the median pit loss, no wear offset
+        "sensitivity": sensitivity rows over pit loss q25/median/q75 and wear
+            offset -wear_range, 0, +wear_range
+        "laps": DataFrame with "strategy", "lap_number" and "lap_time"
+            (seconds, pit loss not included) for every strategy the simulator accepts
+        "strategies": candidate_strategies for this race distance
+
+    raises ValueError as race_settings, candidate_strategies and compare_strategies do.
+    '''
+    settings = race_settings(rows, inputs, circuit, year)
+    strategies = candidate_strategies(settings["race_distance"])
+    return {"settings": settings, "strategies": strategies,
+            **_compare_all(strategies, settings, circuit, inputs, BASELINE)}
+
+
+def _compare_all(strategies: dict, settings: dict, circuit: str, inputs: dict, baseline: str) -> dict:
+    """Ranking at the median pit loss, the sensitivity grid rows, and simulated lap times
+    (pit loss not included) of every strategy the simulator accepts."""
+    shared = (settings["race_distance"], circuit, inputs["model"], settings["reference_lap"])
+    ranking = compare_strategies(strategies, *shared, settings["pit_losses"]["median"],
+                                 settings["lap_one_loss"], inputs["max_ages"], baseline)
+    wear = inputs["wear_range"]
+    rows_sensitivity = sensitivity(strategies, *shared, settings["pit_losses"], settings["lap_one_loss"],
+                                   inputs["max_ages"], baseline, [-wear, 0.0, wear])
+    frames = []
+    for row in ranking:
+        if row["error"] is None:
+            sim = simulate(strategies[row["strategy"]], *shared, settings["pit_losses"]["median"],
+                           settings["lap_one_loss"], inputs["max_ages"])
+            frames.append(sim["laps"][["lap_number", "lap_time"]].assign(strategy=row["strategy"]))
+    return {"ranking": ranking, "sensitivity": rows_sensitivity, "laps": pd.concat(frames, ignore_index=True)}
+
+
+def comparable_races(rows: list[dict]) -> list[tuple[int, str]]:
+    '''
+    Races whose real times can be compared with the simulator: no safety-car laps.
+
+    rows: load_dataset rows
+    returns: sorted list of (year, circuit), newest year first, circuits A-Z.
+    '''
+    races, safety_car = set(), set()
+    for row in rows:
+        races.add((row["year"], row["circuit"]))
+        if "safety_car" in row["exclusion_reasons"]:
+            safety_car.add((row["year"], row["circuit"]))
+    return sorted(races - safety_car, key=lambda race: (-race[0], race[1]))
+
+
+def _race_rows(rows: list[dict], circuit: str, year: int) -> list[dict]:
+    """One race's rows; raises ValueError if missing or it has safety-car laps."""
+    race = [r for r in rows if r["circuit"] == circuit and r["year"] == year]
+    if not race:
+        raise ValueError(f"No race for {circuit} {year} in the dataset")
+    if any("safety_car" in r["exclusion_reasons"] for r in race):
+        raise ValueError(f"{circuit} {year} had a safety car; the simulator has none, so real times can't be compared")
+    return race
+
+
+def driver_choices(rows: list[dict], circuit: str, year: int) -> list[int]:
+    '''
+    Drivers whose race can be compared: same rules as backtest.backtest_race.
+
+    rows: load_dataset rows
+    circuit, year: a race from comparable_races
+
+    returns: sorted driver numbers with a lap time on every lap 1..race
+    distance (so lapped and retired drivers are left out) and at least one
+    clean lap (for the reference lap).
+
+    raises ValueError if the race isn't in rows or had a safety car.
+    '''
+    race = _race_rows(rows, circuit, year)
+    distance = race_distance(race)
+    references = driver_reference_laps(race)
+    timed = defaultdict(set)
+    for row in race:
+        if row["lap_duration"] is not None:
+            timed[row["driver_number"]].add(row["lap_number"])
+    session = race[0]["session_key"]
+    return sorted(d for d, laps in timed.items()
+                  if set(range(1, distance + 1)) <= laps and (session, d) in references)
+
+
+def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driver: int) -> dict:
+    '''
+    One driver's real strategy against the candidate strategies (SPEC section 1).
+
+    rows, inputs, circuit, year: as in race_settings; the race must have no safety car
+    driver: driver number, one of driver_choices
+
+    returns: dict with
+        "settings": race_settings, with "reference_lap" this driver's median clean lap
+        "actual_strategy": backtest.actual_strategy (used sets keep their start age)
+        "actual_time": the driver's real race time, sum of lap times, seconds
+        "simulated_actual": simulated time of that strategy, seconds
+        "model_error": simulated_actual minus actual_time (positive = model too slow)
+        "strategies": {"actual": actual_strategy, **candidate_strategies}; a candidate
+            that starts on the real first compound starts on the real first set (same
+            tyre age, e.g. used qualifying tyres), every other set is new
+        "ranking", "sensitivity", "laps": as in compare_race, with gaps measured
+            against "actual" (model vs model, so the shared model error cancels)
+        "real_laps": DataFrame with "lap_number" and "lap_time", the real lap
+            times (in-laps and out-laps include the time lost in the pit lane)
+
+    raises ValueError if the race had a safety car, the driver isn't in
+    driver_choices, or the simulator refuses the driver's real strategy.
+    '''
+    race = _race_rows(rows, circuit, year)
+    if driver not in driver_choices(rows, circuit, year):
+        raise ValueError(f"Car {driver} didn't run every lap of {circuit} {year} with a time "
+                         "(lapped, retired or missing data), so it can't be compared")
+    settings = race_settings(rows, inputs, circuit, year)
+    distance = settings["race_distance"]
+    laps = sorted((r for r in race if r["driver_number"] == driver and r["lap_number"] <= distance),
+                  key=lambda r: r["lap_number"])
+    settings["reference_lap"] = driver_reference_laps(laps)[(laps[0]["session_key"], driver)]
+    actual = actual_strategy(laps)
+    # Everyone starts the race on the set they started on; only later sets are a free choice.
+    strategies = {"actual": actual}
+    for name, candidate in candidate_strategies(distance).items():
+        first_age = actual["start_ages"][0] if candidate["compounds"][0] == actual["compounds"][0] else 0
+        strategies[name] = {**candidate, "start_ages": [first_age] + [0] * (len(candidate["compounds"]) - 1)}
+    result = _compare_all(strategies, settings, circuit, inputs, "actual")
+    actual_time = sum(r["lap_duration"] for r in laps)
+    simulated = next(r["total"] for r in result["ranking"] if r["strategy"] == "actual")
+    return {"settings": settings, "actual_strategy": actual, "actual_time": actual_time,
+            "simulated_actual": simulated, "model_error": simulated - actual_time,
+            "strategies": strategies, **result,
+            "real_laps": pd.DataFrame({"lap_number": [r["lap_number"] for r in laps],
+                                       "lap_time": [r["lap_duration"] for r in laps]})}
+
+
+def fastest_by_scenario(sensitivity_rows: list[dict]) -> pd.DataFrame:
+    '''
+    The fastest strategy in each sensitivity scenario, as a grid.
+
+    sensitivity_rows: sensitivity (or compare_race "sensitivity") rows
+    returns: DataFrame, one row per pit-loss label (in the order first seen),
+    one column per wear offset (ascending), each cell the rank-1 strategy name.
+    raises ValueError if no row has rank 1.
+    '''
+    winners = pd.DataFrame([r for r in sensitivity_rows if r["rank"] == 1])
+    if winners.empty:
+        raise ValueError("No ranked strategy in the sensitivity rows")
+    grid = winners.pivot_table(index="pit_loss_label", columns="wear_offset", values="strategy", aggfunc="first")
+    return grid.loc[list(dict.fromkeys(winners["pit_loss_label"]))]
+
+
+def gap_ranges(sensitivity_rows: list[dict], baseline: str, base_pit_label: str = "median") -> list[dict]:
+    '''
+    For each strategy: its gap to the baseline at the best estimate, and how far
+    that gap moves across the sensitivity scenarios.
+
+    sensitivity_rows: sensitivity (or compare_race / compare_driver "sensitivity") rows
+    baseline: the strategy the gaps are measured against
+    base_pit_label: the pit-loss label of the best estimate (with wear offset 0)
+
+    returns: one dict per strategy the simulator accepted, smallest gap first, with
+    "strategy", "gap" (best estimate, seconds; negative = faster than the baseline),
+    "min_gap" and "max_gap" (over every scenario), "flagged" (any stint beyond the
+    observed tyre ages) and "confidence": "baseline", "faster in every scenario"
+    (max_gap < 0), "slower in every scenario" (min_gap > 0) or "depends on assumptions".
+
+    raises ValueError if no row is the best-estimate scenario.
+    '''
+    by_strategy = {}
+    for row in sensitivity_rows:
+        if row["gap"] is None:
+            continue
+        entry = by_strategy.setdefault(row["strategy"], {"strategy": row["strategy"], "gap": None, "gaps": [],
+                                                         "flagged": bool(row["flags"])})
+        entry["gaps"].append(row["gap"])
+        if row["pit_loss_label"] == base_pit_label and row["wear_offset"] == 0.0:
+            entry["gap"] = row["gap"]
+    if not by_strategy or any(e["gap"] is None for e in by_strategy.values()):
+        raise ValueError(f"No best-estimate scenario (pit loss {base_pit_label!r}, wear offset 0) in the rows")
+
+    result = []
+    for entry in by_strategy.values():
+        gaps = entry.pop("gaps")
+        entry["min_gap"], entry["max_gap"] = min(gaps), max(gaps)
+        if entry["strategy"] == baseline:
+            entry["confidence"] = "baseline"
+        elif entry["max_gap"] < 0:
+            entry["confidence"] = "faster in every scenario"
+        elif entry["min_gap"] > 0:
+            entry["confidence"] = "slower in every scenario"
+        else:
+            entry["confidence"] = "depends on assumptions"
+        result.append(entry)
+    return sorted(result, key=lambda e: e["gap"])
+
+
+def verdict(ranges: list[dict], min_gap: float = 1.0) -> dict:
+    '''
+    The one-line answer: was any alternative faster than the baseline?
+
+    ranges: gap_ranges result. Flagged alternatives (tyres older than anything
+        observed) never count as faster: their totals are extrapolations.
+    min_gap: seconds an alternative must be faster by, at the best estimate, to
+        count at all. Default 1 s over a race (about 0.02 s per lap), well below
+        what the model can resolve, so smaller gaps are treated as level.
+
+    returns: dict with "kind" and "strategy" (the alternative it is about, or
+    None) plus that strategy's gap_ranges entry under "range" (or None):
+        "clearly_faster": an alternative is faster in every scenario and by at
+            least min_gap at the best estimate (the fastest such one)
+        "maybe_faster": none is, but one is faster by at least min_gap at the
+            best estimate (the fastest such one)
+        "baseline_best": nothing is faster by min_gap at the best estimate, but
+            some alternative is faster in some scenario
+        "baseline_best_everywhere": every alternative is slower in every scenario
+    '''
+    alternatives = [r for r in ranges if r["confidence"] != "baseline" and not r["flagged"]]
+    clearly = [r for r in alternatives if r["confidence"] == "faster in every scenario" and r["gap"] <= -min_gap]
+    if clearly:
+        return {"kind": "clearly_faster", "strategy": clearly[0]["strategy"], "range": clearly[0]}
+    maybe = [r for r in alternatives if r["gap"] <= -min_gap]
+    if maybe:
+        return {"kind": "maybe_faster", "strategy": maybe[0]["strategy"], "range": maybe[0]}
+    if all(r["confidence"] == "slower in every scenario" for r in alternatives):
+        return {"kind": "baseline_best_everywhere", "strategy": None, "range": None}
+    return {"kind": "baseline_best", "strategy": None, "range": None}
+
+
+def cumulative_gap(laps: pd.DataFrame, strategies: dict[str, dict], pit_loss: float,
+                   strategy: str, baseline: str) -> pd.DataFrame:
+    '''
+    Running time difference between two simulated strategies, lap by lap.
+
+    laps: compare_race / compare_driver "laps" (strategy, lap_number, lap_time
+        without pit loss)
+    strategies: name -> strategy, for the pit laps
+    pit_loss: seconds added on each strategy's pit laps (in-laps)
+    strategy, baseline: the two strategies to compare
+
+    returns: DataFrame with "lap_number" and "gap": strategy's elapsed time minus
+    the baseline's after that lap, seconds (positive = behind). Pit stops show
+    as steps, tyre wear as slopes; the last lap's gap is the race-total gap.
+
+    raises ValueError if either strategy has no simulated laps.
+    '''
+    elapsed = {}
+    for name in (strategy, baseline):
+        own = laps[laps["strategy"] == name].sort_values("lap_number")
+        if own.empty:
+            raise ValueError(f"No simulated laps for {name!r}")
+        times = own["lap_time"] + own["lap_number"].isin(strategies[name]["pit_laps"]) * pit_loss
+        elapsed[name] = times.cumsum().to_numpy()
+    return pd.DataFrame({"lap_number": sorted(laps.loc[laps["strategy"] == strategy, "lap_number"]),
+                         "gap": elapsed[strategy] - elapsed[baseline]})

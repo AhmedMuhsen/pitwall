@@ -1,6 +1,10 @@
+import pandas as pd
 import pytest
 
-from pitwall.comparison import candidate_strategies, compare_strategies, sensitivity
+from pitwall.comparison import (candidate_strategies, comparable_races, compare_driver, compare_race,
+                                compare_strategies, cumulative_gap, driver_choices, fastest_by_scenario, fit_inputs,
+                                gap_ranges, load_dataset, race_settings, sensitivity, verdict)
+from pitwall.simulator import simulate
 
 
 class StubModel:
@@ -93,3 +97,223 @@ def test_sensitivity_shows_ranking_flip_with_free_stops():
     assert winners == {"free": "two_stop", "costly": "one_stop"}
     assert len(rows) == 4
     assert {r["wear_offset"] for r in rows} == {0.0}
+
+
+def race_row(lap, driver, duration, clean=True, circuit="X", year=2024):
+    return {"session_key": 1, "circuit": circuit, "year": year, "driver_number": driver,
+            "lap_number": lap, "lap_duration": duration, "is_clean": clean}
+
+
+# Two drivers, 4 clean laps each. Driver 1's median lap is 100.5, driver 2's is 102.5.
+RACE = [race_row(lap, 1, d) for lap, d in zip([1, 2, 3, 4], [105.0, 100.0, 99.0, 101.0])] + \
+       [race_row(lap, 2, d) for lap, d in zip([1, 2, 3, 4], [107.0, 102.0, 101.0, 103.0])]
+INPUTS = {"model": StubModel(), "max_ages": MAX_AGES, "wear_range": 0.05, "lap_one_loss": {"X": 0.0},
+          "pit_loss": {"X": {"q25": 0.0, "median": 20.0, "q75": 25.0}}}
+
+
+def test_load_dataset_adds_delta_and_race_fraction(tmp_path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    path = tmp_path / "laps.parquet"
+    pq.write_table(pa.Table.from_pylist(RACE), path)
+
+    rows = load_dataset(path)
+
+    first = rows[0]   # driver 1, lap 1: 105.0 - median(105, 100, 99, 101) = 105.0 - 100.5
+    assert first["delta"] == pytest.approx(4.5)
+    assert first["race_fraction"] == pytest.approx(0.25)
+
+
+def test_race_settings_hand_example():
+    result = race_settings(RACE, INPUTS, "X", 2024)
+
+    # Driver medians over all 4 clean laps: 100.5 and 102.5; their median is 101.5.
+    assert result == {"race_distance": 4, "reference_lap": pytest.approx(101.5),
+                      "pit_losses": {"q25": 0.0, "median": 20.0, "q75": 25.0}, "lap_one_loss": 0.0}
+
+
+def test_race_settings_rejects_missing_race_and_missing_pit_loss():
+    with pytest.raises(ValueError, match="No race"):
+        race_settings(RACE, INPUTS, "X", 2025)
+    with pytest.raises(ValueError, match="No measured pit stops"):
+        race_settings(RACE, {**INPUTS, "pit_loss": {}}, "X", 2024)
+
+
+def test_compare_race_returns_ranking_sensitivity_and_laps():
+    result = compare_race(RACE, INPUTS, "X", 2024)
+
+    assert result["settings"]["race_distance"] == 4
+    assert len(result["ranking"]) == len(result["strategies"])
+    # 3 pit losses x 3 wear offsets, every strategy in each.
+    assert len(result["sensitivity"]) == 9 * len(result["strategies"])
+    assert {r["wear_offset"] for r in result["sensitivity"]} == {-0.05, 0.0, 0.05}
+    laps = result["laps"]
+    assert set(laps["strategy"]) == set(result["strategies"])
+    assert (laps.groupby("strategy")["lap_number"].max() == 4).all()
+
+
+def test_fit_inputs_needs_two_training_years():
+    with pytest.raises(ValueError, match="two training years"):
+        fit_inputs(RACE, [2024])
+
+
+def test_fastest_by_scenario_grid():
+    rows = sensitivity(STRATEGIES, 4, "X", StubModel(), 100.0, {"free": 0.0, "costly": 20.0},
+                       0.0, MAX_AGES, "one_stop", [0.0, 0.05])
+
+    grid = fastest_by_scenario(rows)
+
+    assert grid.index.tolist() == ["free", "costly"]
+    assert grid.columns.tolist() == [0.0, 0.05]
+    # Free stops: two_stop wins at both offsets (its summed tyre age is lower).
+    assert grid.loc["free"].tolist() == ["two_stop", "two_stop"]
+    assert grid.loc["costly"].tolist() == ["one_stop", "one_stop"]
+
+
+def test_fastest_by_scenario_rejects_no_ranked_rows():
+    with pytest.raises(ValueError):
+        fastest_by_scenario([{"rank": None, "pit_loss_label": "q25", "wear_offset": 0.0, "strategy": "a"}])
+
+
+def driver_lap(driver, lap, duration, compound, stint, age, reasons=(), year=2024):
+    return {"session_key": 1, "circuit": "X", "year": year, "driver_number": driver, "lap_number": lap,
+            "lap_duration": duration, "is_clean": duration is not None and not reasons,
+            "compound": compound, "stint_number": stint, "tyre_age": age, "exclusion_reasons": list(reasons)}
+
+
+# 4-lap race. Car 1: MEDIUM laps 1-2 (ages 0, 1), pits on lap 2, HARD laps 3-4 (ages 0, 1),
+# lap times 105, 100, 99, 101 (real total 405.0, median clean lap 100.5).
+# Car 2 has no time on lap 3 (left out). Car 3 has no clean lap (no reference, left out).
+DRIVER_RACE = (
+    [driver_lap(1, lap, d, c, s, a) for lap, d, c, s, a in
+     [(1, 105.0, "MEDIUM", 1, 0), (2, 100.0, "MEDIUM", 1, 1), (3, 99.0, "HARD", 2, 0), (4, 101.0, "HARD", 2, 1)]]
+    + [driver_lap(2, lap, d, "MEDIUM" if lap < 3 else "HARD", 1 if lap < 3 else 2, 0) for lap, d in
+       [(1, 106.0), (2, 101.0), (3, None), (4, 102.0)]]
+    + [driver_lap(3, lap, 110.0, "MEDIUM", 1, lap - 1, reasons=["traffic"]) for lap in [1, 2, 3, 4]]
+)
+
+
+def test_comparable_races_leaves_out_safety_car_races():
+    sc_race = [{**r, "year": 2023, "exclusion_reasons": ["safety_car"]} for r in DRIVER_RACE[:1]] + \
+              [{**r, "year": 2023} for r in DRIVER_RACE[1:4]]
+    other = [{**r, "year": 2025, "circuit": "A"} for r in DRIVER_RACE[:4]]
+
+    assert comparable_races(DRIVER_RACE + sc_race + other) == [(2025, "A"), (2024, "X")]
+
+
+def test_driver_choices_only_full_distance_with_reference():
+    assert driver_choices(DRIVER_RACE, "X", 2024) == [1]
+
+
+def test_driver_choices_rejects_safety_car_race():
+    race = [{**r, "exclusion_reasons": ["safety_car"]} if r["lap_number"] == 2 else r for r in DRIVER_RACE]
+
+    with pytest.raises(ValueError, match="safety car"):
+        driver_choices(race, "X", 2024)
+
+
+def test_compare_driver_hand_example():
+    result = compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 1)
+
+    assert result["actual_strategy"] == {"compounds": ["MEDIUM", "HARD"], "pit_laps": [2], "start_ages": [0, 0]}
+    assert result["settings"]["reference_lap"] == pytest.approx(100.5)
+    assert result["actual_time"] == pytest.approx(405.0)
+    # 4 * 100.5 + wear 0.2 + fuel 2.5 + one stop 20.0 = 424.7
+    assert result["simulated_actual"] == pytest.approx(424.7)
+    assert result["model_error"] == pytest.approx(19.7)
+    gaps = {r["strategy"]: r["gap"] for r in result["ranking"]}
+    assert gaps["actual"] == pytest.approx(0.0)
+    # 1stop_MH_late on 4 laps pits on lap 2 with new sets: the same as the real strategy.
+    assert gaps["1stop_MH_late"] == pytest.approx(0.0)
+    assert result["real_laps"]["lap_time"].tolist() == [105.0, 100.0, 99.0, 101.0]
+    assert "actual" in set(result["laps"]["strategy"])
+
+
+def test_compare_driver_rejects_driver_without_full_race():
+    with pytest.raises(ValueError, match="Car 2"):
+        compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 2)
+
+
+def ranges_row(strategy, gap, low, high, confidence, flagged=False):
+    return {"strategy": strategy, "gap": gap, "min_gap": low, "max_gap": high,
+            "confidence": confidence, "flagged": flagged}
+
+
+def test_gap_ranges_hand_example():
+    rows = sensitivity(STRATEGIES, 4, "X", StubModel(), 100.0, {"free": 0.0, "costly": 20.0},
+                       0.0, MAX_AGES, "one_stop", [0.0])
+
+    result = gap_ranges(rows, "one_stop", base_pit_label="costly")
+
+    # two_stop: +19.9 with a 20 s stop, -0.1 with free stops (see the sensitivity test above).
+    assert [r["strategy"] for r in result] == ["one_stop", "two_stop"]
+    assert result[0]["confidence"] == "baseline"
+    two = result[1]
+    assert two["gap"] == pytest.approx(19.9)
+    assert (two["min_gap"], two["max_gap"]) == (pytest.approx(-0.1), pytest.approx(19.9))
+    assert two["confidence"] == "depends on assumptions"
+    assert two["flagged"] is False
+
+
+def test_gap_ranges_slower_everywhere_and_missing_best_estimate():
+    rows = sensitivity(STRATEGIES, 4, "X", StubModel(), 100.0, {"costly": 20.0}, 0.0, MAX_AGES, "one_stop", [0.0])
+
+    assert gap_ranges(rows, "one_stop", base_pit_label="costly")[1]["confidence"] == "slower in every scenario"
+    with pytest.raises(ValueError, match="best-estimate"):
+        gap_ranges(rows, "one_stop")   # no "median" label in these rows
+
+
+def test_verdict_cases():
+    base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
+    clear = ranges_row("a", -5.0, -8.0, -1.0, "faster in every scenario")
+    maybe = ranges_row("b", -1.5, -3.0, 2.0, "depends on assumptions")
+    flagged = ranges_row("c", -20.0, -25.0, -15.0, "faster in every scenario", flagged=True)
+    slower = ranges_row("d", 4.0, 1.0, 7.0, "slower in every scenario")
+    close = ranges_row("e", 1.0, -1.0, 3.0, "depends on assumptions")
+
+    assert verdict([flagged, clear, maybe, base])["strategy"] == "a"
+    assert verdict([flagged, clear, maybe, base])["kind"] == "clearly_faster"
+    # The flagged one is faster everywhere, but it's an extrapolation, so it never counts.
+    assert verdict([flagged, maybe, base, slower]) == {"kind": "maybe_faster", "strategy": "b", "range": maybe}
+    assert verdict([base, close, slower])["kind"] == "baseline_best"
+    assert verdict([base, slower])["kind"] == "baseline_best_everywhere"
+
+
+def test_cumulative_gap_hand_example():
+    laps = pd.concat([simulate(s, 4, "X", StubModel(), 100.0, 20.0, 0.0, MAX_AGES)["laps"]
+                      [["lap_number", "lap_time"]].assign(strategy=name) for name, s in STRATEGIES.items()])
+
+    result = cumulative_gap(laps, STRATEGIES, 20.0, "two_stop", "one_stop")
+
+    # Lap 1: two_stop pits (+20). Lap 2: both pit; two_stop's new HARD is 0.1 s quicker. Laps 3-4 equal.
+    assert result["lap_number"].tolist() == [1, 2, 3, 4]
+    assert result["gap"].tolist() == pytest.approx([20.0, 19.9, 19.9, 19.9])
+
+
+def test_cumulative_gap_rejects_unknown_strategy():
+    laps = simulate(STRATEGIES["one_stop"], 4, "X", StubModel(), 100.0, 20.0, 0.0, MAX_AGES)["laps"]
+    with pytest.raises(ValueError, match="No simulated laps"):
+        cumulative_gap(laps.assign(strategy="one_stop"), STRATEGIES, 20.0, "two_stop", "one_stop")
+
+
+def test_compare_driver_candidates_start_on_the_real_first_set():
+    # Car 1 again, but its first MEDIUM set was already 3 laps old at the start.
+    race = [{**r, "tyre_age": r["tyre_age"] + 3} if r["driver_number"] == 1 and r["stint_number"] == 1 else r
+            for r in DRIVER_RACE]
+
+    strategies = compare_driver(race, INPUTS, "X", 2024, 1)["strategies"]
+
+    assert strategies["actual"]["start_ages"] == [3, 0]
+    assert strategies["1stop_MH_late"]["start_ages"] == [3, 0]     # starts on MEDIUM, like car 1
+    assert strategies["2stop_MHH"]["start_ages"] == [3, 0, 0]
+    assert strategies["1stop_HM"]["start_ages"] == [0, 0]          # starts on HARD: a new set
+    assert strategies["2stop_SHH"]["start_ages"] == [0, 0, 0]
+
+
+def test_verdict_treats_gaps_under_min_gap_as_level():
+    base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
+    tiny_everywhere = ranges_row("a", -0.4, -0.6, -0.2, "faster in every scenario")
+    tiny_maybe = ranges_row("b", -0.9, -3.0, 2.0, "depends on assumptions")
+
+    assert verdict([tiny_everywhere, tiny_maybe, base])["kind"] == "baseline_best"
+    assert verdict([tiny_everywhere, base], min_gap=0.3)["kind"] == "clearly_faster"

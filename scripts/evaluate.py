@@ -8,6 +8,8 @@ from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel, build_pipeline
 from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
 from pitwall.backtest import backtest_race
+from pitwall.comparison import candidate_strategies, sensitivity
+from pitwall.processing import race_distance
 from pitwall.simulator import observed_max_ages
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")
@@ -264,6 +266,97 @@ def print_held_out_2024(train):
         print(drift.round(2).to_string())
 
 
+def held_out_wear_error(rows):
+    """Leftover tyre-age slopes (s per lap of age) of P_1e5 on the safety-car-free 2023 and 2024
+    races, each race scored by a model fitted on the other year: how far off the wear rate was
+    on a year the model didn't see. One value per compound per race (residual_trends)."""
+    records = []
+    for _, fold_train, fold_validation in leave_one_year_out(rows, [2023, 2024]):
+        model = fit_model(True, False, fold_train, "race_fraction", 100_000)
+        safety_car = {r["session_key"] for r in fold_validation if "safety_car" in r["exclusion_reasons"]}
+        records += residual_trends([r for r in fold_validation if r["session_key"] not in safety_car], model)
+    return pd.Series([r["tyre_age_slope"] for r in records if r["tyre_age_slope"] is not None])
+
+
+def print_strategy_comparison(rows):
+    """Candidate strategies ranked at each circuit's 2024 race by P_1e5 fitted on 2023+2024
+    (DECISIONS 2026-11-17), then re-ranked with pit loss at q25/q75 and wear ± the 75th
+    percentile of the held-out wear error."""
+    slopes = held_out_wear_error(rows).abs()
+    wear_range = float(slopes.quantile(0.75))
+    print(f"\nHeld-out wear error, |s per lap of age| over {len(slopes)} compound-races: median "
+          f"{slopes.median():.3f}, q75 {wear_range:.3f}, max {slopes.max():.3f}; sensitivity uses ±q75")
+    train_years = [2023, 2024]
+    train = [row for row in rows if row["year"] in train_years]
+    model = fit_model(True, False, train, "race_fraction", 100_000)
+    names = model.columns_.get_feature_names_out()
+    print(f"\nStrategy comparison, P_1e5 fitted on {train_years}: shared wear rate "
+          f"{dict(zip(names, model.coef_))['pass__tyre_age']:+.3f} s/lap")
+    pit_loss = pit_loss_by_circuit(stop_losses(train, model), train_years)
+    lap_one = pit_loss_by_circuit(lap_one_losses(train, model), train_years)
+    max_ages = observed_max_ages(max_clean_tyre_age(train), train_years)
+
+    for circuit in sorted({row["circuit"] for row in rows}):
+        race = [row for row in rows if row["circuit"] == circuit and row["year"] == 2024]
+        distance = race_distance(race)
+        # Reference lap and lap-1 loss add the same time to every strategy, so they can't change a ranking.
+        reference = median(driver_reference_laps(race).values())
+        losses = {label: pit_loss[circuit][label] for label in ("q25", "median", "q75")}
+        df = pd.DataFrame(sensitivity(candidate_strategies(distance), distance, circuit, model, reference,
+                                      losses, lap_one[circuit]["median"], max_ages, "1stop_MH_early",
+                                      [-wear_range, 0.0, wear_range]))
+        base = df[(df["pit_loss_label"] == "median") & (df["wear_offset"] == 0.0)]
+        print(f"\n{circuit} 2024, {distance} laps, pit loss q25/median/q75 "
+              + "/".join(f"{v:.1f}" for v in losses.values()) + " s; gap to 1stop_MH_early (s)")
+        print(base[["rank", "strategy", "total", "gap"]].round(1).to_string(index=False))
+        for row in base.itertuples():
+            for flag in row.flags:
+                print(f"    flag {row.strategy}: {flag}")
+            if row.error:
+                print(f"    {row.strategy} refused: {row.error}")
+
+        winners = df[df["rank"] == 1].pivot_table(index="pit_loss_label", columns="wear_offset",
+                                                  values="strategy", aggfunc="first")
+        print("  fastest strategy by pit loss (rows) and wear offset s/lap (columns):")
+        print(winners.loc[["q25", "median", "q75"]].rename(columns=lambda c: f"{c:+.3f}").to_string())
+
+
+def print_final_test(rows):
+    """The one 2025 test of the final model (P_1e5) fitted on 2023+2024, next to B_frac and the
+    zero baseline. Reported, never used to choose a model (rule 4)."""
+    train, test = split_by_year(rows, [2023, 2024], [2025])
+    pairs = training_pairs(train)
+    unseen = [row for row in test if (row["compound"], row["circuit"]) not in pairs]
+    test = [row for row in test if (row["compound"], row["circuit"]) in pairs]
+    print(f"\nFinal test: fit on 2023+2024 ({len(train)} rows), score 2025 ({len(test)} rows); "
+          f"left out, pair not in training: {len(unseen)} rows")
+
+    models = {"P_1e5": fit_model(True, False, train, "race_fraction", 100_000),
+              "B_frac": fit_model(True, False, train, "race_fraction")}
+    for flag in ("is_clean", "is_racing"):
+        usable, skipped = scored_rows(test, flag)
+        test_df = pd.DataFrame(usable)
+        print(f"  {flag} (n={len(usable)}, skipped no delta={skipped})")
+        results = {"zero": zero_baseline(usable)}
+        for name, model in models.items():
+            results[name] = score(test_df["delta"].tolist(), model.predict(test_df).tolist())
+        for name, result in results.items():
+            print(f"    {name:<7} MAE={result['mae']:.3f}s  RMSE={result['rmse']:.3f}s  bias={result['bias']:+.3f}s")
+
+    usable, _ = scored_rows(test, "is_clean")
+    test_df = pd.DataFrame(usable)
+    test_df["age_bucket"] = pd.cut(test_df["tyre_age"], bins=AGE_BINS, labels=AGE_LABELS)
+    for by in ("compound", "circuit", "age_bucket"):
+        tables = [score_by_group(test_df.assign(predicted=0.0), by)[["mae", "bias"]].add_prefix("zero_")]
+        for name, model in models.items():
+            scored = test_df.assign(predicted=model.predict(test_df))
+            tables.append(score_by_group(scored, by)[["mae", "bias"]].add_prefix(f"{name}_"))
+        table = pd.concat(tables, axis=1)
+        table["n"] = test_df.groupby(by, observed=True).size()
+        print(f"\nFinal test, clean 2025 laps by {by} (seconds)")
+        print(table.round(3).to_string())
+
+
 def main():
     rows = pq.read_table(DATASET_PATH).to_pylist()
     # Each race's reference comes from that race's own clean laps (DECISIONS 2026-11-12).
@@ -308,6 +401,8 @@ def main():
     print_cross_year_backtest(rows)
     print_error_split(rows)
     print_residual_trends(rows)
+    print_strategy_comparison(rows)
+    print_final_test(rows)
 
 
 if __name__ == "__main__":

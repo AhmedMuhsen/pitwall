@@ -326,3 +326,17 @@ range and in order, observed-range guard) and pit loss per circuit from the data
 
 Still unclear: How the 21-44 s gap splits into pit loss, lap 1 and traffic.
 Which years the observed-range guard should use.
+
+## 2026-11-17 Session 20
+
+Done: Strategy validation in simulator.py: validate_strategy (dry compounds
+only, at least two different, pit laps increasing and inside the race) and
+stint_range_flags (stint older than the oldest clean tyre age in 2023-2024 is
+flagged, no data at all is refused; in-laps not counted). simulate now runs
+both and returns "flags". 10 real Hungaroring 2024 2-stops: all pass, no flags.
+
+Next: Session 21: pit loss per circuit from the data (method choice; /pit
+isn't cached yet).
+
+Still unclear: Current FIA article number for the two-compound rule. How many
+2025 backtest strategies get flagged.

@@ -575,3 +575,22 @@ One entry per real decision. Format:
   strategies on used sets (12 of 60 Hungary 2024 stints).
 - **What would make us reconsider** — Validation code repeatedly checking the
   same shape errors that a dataclass would catch at construction.
+
+## 2026-11-17 — Range guard flags, doesn't refuse; limits from the training years
+
+- **Decision** — `simulate` raises on impossible strategies (`validate_strategy`)
+  and on a compound with no clean laps at the circuit. A stint older than the
+  oldest clean tyre age for its compound@circuit in 2023-2024
+  (`observed_max_ages`) is returned as a flag; the total is still computed. The
+  in-lap of a stint that ends in a stop is not compared, the lap before it is.
+- **Requirement** — Rule 6: refuse or flag stints beyond the observed range.
+  The 2026-11-10 decision left open which years the guard uses.
+- **Options** — Behaviour: (a) flag, (b) refuse, (c) list problems, never raise.
+  Years: (a) training years 2023-2024, (b) the simulated race's own year.
+- **Choice and reason** — (a) and (a). Refusing would drop real 2025 strategies
+  from the backtest (Hungaroring HARD reaches 54 in 2025, limit 40). The limit
+  is what the model learned from; the race's own year would use 2025 for a
+  choice and hide extrapolation. In-laps are never clean, so counting them
+  would flag the very stints the limit came from.
+- **What would make us reconsider** — Most 2025 backtest strategies getting
+  flagged (the flag stops meaning anything), or the UI needing a hard refuse.

@@ -340,3 +340,18 @@ isn't cached yet).
 
 Still unclear: Current FIA article number for the two-compound rule. How many
 2025 backtest strategies get flagged.
+
+## 2026-11-17 Session 21
+
+Done: Pit loss per circuit in analysis.py: stop_losses (per stop: actual minus
+predicted delta on in-lap + out-lap, with skip reasons) and pit_loss_by_circuit
+(median, quartiles, counts). 2023-2024, Model B frac: Hungaroring 20.8 s, Yas
+Marina 23.0, Sakhir 24.8, Monza 25.6, Singapore 29.4 (21 of 48 stops skipped
+for safety car). Hungaroring 2024 2-stops with it: actual minus predicted is
++0.4 to +46.5 s, and every lap 1 is 4-14 s slower than predicted.
+
+Next: Session 22: lap 1 (the model never trains on it, standing start) and the
+race-total backtest on 2023/2024 to choose alpha.
+
+Still unclear: Why drivers 11, 16, 44, 63 are still 26-47 s off after pit loss
+and lap 1. Whether pit loss from Model B is right for the pooled models.

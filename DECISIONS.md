@@ -594,3 +594,26 @@ One entry per real decision. Format:
   would flag the very stints the limit came from.
 - **What would make us reconsider** — Most 2025 backtest strategies getting
   flagged (the flag stops meaning anything), or the UI needing a hard refuse.
+
+## 2026-11-17 — Pit loss per circuit from in-lap and out-lap residuals
+
+- **Decision** — Pit loss for a circuit is the median, over 2023-2024 stops,
+  of (actual minus predicted delta) on the in-lap plus the out-lap
+  (`stop_losses`, `pit_loss_by_circuit`). Stops with a safety-car lap, an
+  untimed lap or no out-lap are kept with a skip reason, not counted. One number
+  per circuit, no team term.
+- **Requirement** — Rule 5 and Plan Week 6 task 4: pit loss per circuit,
+  pit-lane time minus racing time over the same stretch, kept as a parameter.
+- **Options** — (a) Lap residuals with the model. (b) `/pit` `lane_duration`
+  minus an estimated racing time for the pit-lane stretch. (c) (a) with `/pit` as
+  a check. Also considered: a per-team number or team offset.
+- **Choice and reason** — (a). No new data, and it is exactly what `simulate`
+  leaves out (it predicts in-laps and out-laps as normal laps), so nothing is
+  counted twice. (b) needs a guess for the racing time over the pit stretch.
+  Median, because single stops reach 109 s. Teams left out: 5-9 stops per team
+  per circuit, the team-specific part is only stationary time and the out-lap,
+  and team data isn't in the dataset. Quartile spread is 1.5-4 s per circuit;
+  2023 and 2024 medians differ by 0.8-1.4 s.
+- **What would make us reconsider** — Backtest errors that line up by team, or
+  pit loss changing a lot when measured with the chosen pooled model instead
+  of Model B.

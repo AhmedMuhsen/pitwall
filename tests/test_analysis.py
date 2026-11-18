@@ -1,6 +1,7 @@
 from pitwall.analysis import average_lap_time_by_tyre_age
 from pitwall.analysis import max_clean_tyre_age
 from pitwall.analysis import median_clean_lap_by_race_lap
+from pitwall.analysis import pit_loss_by_circuit, stop_losses
 import pytest
 
 def test_empty_lap_raises():
@@ -95,3 +96,79 @@ def test_median_by_race_lap_no_clean_laps():
 def test_median_by_race_lap_empty_raises():
     with pytest.raises(ValueError):
         median_clean_lap_by_race_lap([], 1)
+
+
+
+class StubModel:
+    """delta = 0.1 * tyre_age + 1.0 * race_fraction."""
+
+    def predict(self, X):
+        return 0.1 * X["tyre_age"].to_numpy() + 1.0 * X["race_fraction"].to_numpy()
+
+
+def stop_lap(driver, lap, compound, age, fraction, delta, reasons):
+    return {"session_key": 1, "driver_number": driver, "lap_number": lap, "circuit": "X",
+            "year": 2024, "compound": compound, "tyre_age": age, "race_fraction": fraction,
+            "delta": delta, "exclusion_reasons": reasons}
+
+
+def test_stop_losses_hand_example_and_skips():
+    rows = [
+        stop_lap(1, 9, "MEDIUM", 8, 0.18, 0.5, []),  # normal lap, not a stop
+        # Measured stop: in-lap 3.0 - (0.9 + 0.2) = 1.9, out-lap 20.0 - (0.0 + 0.22) = 19.78 -> 21.68
+        stop_lap(1, 10, "MEDIUM", 9, 0.20, 3.0, ["in_lap"]),
+        stop_lap(1, 11, "HARD", 0, 0.22, 20.0, ["pit_out"]),
+        # In-lap under the safety car
+        stop_lap(2, 10, "MEDIUM", 9, 0.20, 3.0, ["in_lap", "safety_car"]),
+        stop_lap(2, 11, "HARD", 0, 0.22, 20.0, ["pit_out"]),
+        # Out-lap with no time
+        stop_lap(3, 10, "MEDIUM", 9, 0.20, 3.0, ["in_lap"]),
+        stop_lap(3, 11, "HARD", 0, 0.22, None, ["pit_out", "null_lap_duration"]),
+        # In-lap with no out-lap row
+        stop_lap(4, 10, "MEDIUM", 9, 0.20, 3.0, ["in_lap"]),
+    ]
+
+    result = {r["driver_number"]: r for r in stop_losses(rows, StubModel())}
+
+    assert sorted(result) == [1, 2, 3, 4]
+    assert result[1]["loss"] == pytest.approx(21.68)
+    assert result[1]["skip_reason"] is None
+    assert result[1]["in_lap"] == 10 and result[1]["circuit"] == "X" and result[1]["year"] == 2024
+    assert (result[2]["loss"], result[2]["skip_reason"]) == (None, "safety_car")
+    assert (result[3]["loss"], result[3]["skip_reason"]) == (None, "no_time")
+    assert (result[4]["loss"], result[4]["skip_reason"]) == (None, "no_out_lap")
+
+
+def test_stop_losses_no_stops_gives_empty_list():
+    rows = [stop_lap(1, 9, "MEDIUM", 8, 0.18, 0.5, [])]
+
+    assert stop_losses(rows, StubModel()) == []
+
+
+
+def loss_record(circuit, year, loss, skip_reason=None):
+    return {"circuit": circuit, "year": year, "loss": loss, "skip_reason": skip_reason}
+
+
+def test_pit_loss_by_circuit_uses_chosen_years():
+    losses = [
+        loss_record("X", 2024, 20.0), loss_record("X", 2024, 22.0), loss_record("X", 2024, 30.0),
+        loss_record("X", 2024, 21.0), loss_record("X", 2023, 25.0),
+        loss_record("X", 2024, None, "safety_car"),
+        loss_record("X", 2025, 99.0), loss_record("X", 2025, None, "no_time"),  # not a chosen year
+    ]
+
+    result = pit_loss_by_circuit(losses, years=[2023, 2024])
+
+    # Measured 2023-2024: 20, 21, 22, 25, 30
+    assert result == {"X": {"median": 22.0, "q25": 21.0, "q75": 25.0, "measured": 5,
+                            "skipped": {"safety_car": 1}}}
+
+
+def test_pit_loss_by_circuit_leaves_out_circuit_with_no_measured_stop():
+    losses = [loss_record("X", 2024, 20.0), loss_record("Y", 2024, None, "safety_car")]
+
+    result = pit_loss_by_circuit(losses, years=[2024])
+
+    assert list(result) == ["X"]
+    assert result["X"]["q25"] == result["X"]["q75"] == 20.0  # one stop: spread is that stop

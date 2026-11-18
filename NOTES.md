@@ -355,3 +355,19 @@ race-total backtest on 2023/2024 to choose alpha.
 
 Still unclear: Why drivers 11, 16, 44, 63 are still 26-47 s off after pit loss
 and lap 1. Whether pit loss from Model B is right for the pooled models.
+
+## 2026-11-17 Session 22
+
+Done: Cross-year race-total backtest (backtest.py: actual_strategy,
+backtest_race; lap_one_losses; simulate gets lap_one_loss). Each held-out year
+uses model, pit loss, lap-1 loss and tyre-age limits from the other year. 76
+lead-lap driver-races in 7 safety-car-free races: MAE B 11.91 s, P_1e5 11.81,
+P_1e6 11.84, C 12.86 (about 0.2 s/lap). 7 of 76 flagged by the range guard.
+Model choice deferred: most error is a race-wide bias shared by every model
+(Singapore 2024 +4 to +16 s, Monza 2024 -9 to -14 s).
+
+Next: Session 23: split each race-total error into lap 1, stops and normal
+laps to find the race-wide bias, then choose between P_1e5 and B.
+
+Still unclear: Whether the race-wide bias is the fuel term, year-to-year pit
+loss, lap 1 or the reference lap. Backtest covers lead-lap finishers only.

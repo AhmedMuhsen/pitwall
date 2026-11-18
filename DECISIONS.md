@@ -617,3 +617,24 @@ One entry per real decision. Format:
 - **What would make us reconsider** — Backtest errors that line up by team, or
   pit loss changing a lot when measured with the chosen pooled model instead
   of Model B.
+
+## 2026-11-17 — Lap-1 loss per circuit, measured like pit loss
+
+- **Decision** — `simulate` adds `lap_one_loss` to lap 1: per circuit, the
+  median over the training years of actual minus predicted delta on lap 1
+  (`lap_one_losses`, aggregated with `pit_loss_by_circuit`). A circuit with no
+  measurable lap 1 in the training year (Yas Marina 2024, VSC on laps 1-4) gets
+  the median over all circuits that year (7.9 s), with a printed note.
+  Stops or laps the model can't predict are skipped as `model_cannot_predict`.
+- **Requirement** — The model never fits lap 1 (not clean), so it predicted the
+  standing start as a normal lap: every Hungaroring 2024 lap 1 was 4-14 s
+  slower than predicted, biasing every race total.
+- **Options** — (a) A lap-1 loss per circuit. (b) Start backtest totals at lap
+  2. (c) Ignore it: the same for every strategy, so comparisons don't change.
+- **Choice and reason** — (a). Race totals in the app and the backtest stay
+  realistic, and it reuses the pit-loss method and code. Medians by circuit
+  range from 4.8 s (Monza 2023) to 9.4 s (Singapore 2024), each with a
+  quartile spread of 3-4 s, so one number for all circuits would be too coarse.
+- **What would make us reconsider** — Lap-1 loss varying a lot by grid
+  position (front vs back), or the error split showing lap 1 carries much of
+  the race-wide bias.

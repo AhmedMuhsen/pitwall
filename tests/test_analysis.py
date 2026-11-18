@@ -1,7 +1,7 @@
 from pitwall.analysis import average_lap_time_by_tyre_age
 from pitwall.analysis import max_clean_tyre_age
 from pitwall.analysis import median_clean_lap_by_race_lap
-from pitwall.analysis import pit_loss_by_circuit, stop_losses
+from pitwall.analysis import lap_one_losses, pit_loss_by_circuit, stop_losses
 import pytest
 
 def test_empty_lap_raises():
@@ -172,3 +172,55 @@ def test_pit_loss_by_circuit_leaves_out_circuit_with_no_measured_stop():
 
     assert list(result) == ["X"]
     assert result["X"]["q25"] == result["X"]["q75"] == 20.0  # one stop: spread is that stop
+
+
+
+def test_lap_one_losses_hand_example_and_skips():
+    rows = [
+        # Lap 1: 7.0 - (0.0 + 0.02) = 6.98
+        stop_lap(1, 1, "MEDIUM", 0, 0.02, 7.0, ["lap_1"]),
+        stop_lap(1, 2, "MEDIUM", 1, 0.04, 0.5, []),  # not lap 1
+        stop_lap(2, 1, "MEDIUM", 0, 0.02, 9.0, ["lap_1", "safety_car"]),
+        stop_lap(3, 1, "SOFT", 2, 0.02, None, ["lap_1", "null_lap_duration"]),
+    ]
+
+    result = {r["driver_number"]: r for r in lap_one_losses(rows, StubModel())}
+
+    assert sorted(result) == [1, 2, 3]
+    assert result[1]["loss"] == pytest.approx(6.98) and result[1]["skip_reason"] is None
+    assert (result[2]["loss"], result[2]["skip_reason"]) == (None, "safety_car")
+    assert (result[3]["loss"], result[3]["skip_reason"]) == (None, "no_time")
+    assert result[1]["circuit"] == "X" and result[1]["year"] == 2024
+
+
+
+class SoftOnlyModel(StubModel):
+    """Like StubModel, but raises for any compound other than SOFT (as a model that never saw it)."""
+
+    def predict(self, X):
+        if (X["compound"] != "SOFT").any():
+            raise ValueError("Pairs not seen in training")
+        return super().predict(X)
+
+
+def test_stop_losses_skips_stop_model_cannot_predict_and_keeps_others():
+    rows = [
+        stop_lap(1, 10, "SOFT", 9, 0.20, 3.0, ["in_lap"]),  # 3.0 - 1.1 = 1.9
+        stop_lap(1, 11, "SOFT", 0, 0.22, 20.0, ["pit_out"]),  # 20.0 - 0.22 = 19.78
+        stop_lap(2, 10, "SOFT", 9, 0.20, 3.0, ["in_lap"]),
+        stop_lap(2, 11, "HARD", 0, 0.22, 20.0, ["pit_out"]),
+    ]
+
+    result = {r["driver_number"]: r for r in stop_losses(rows, SoftOnlyModel())}
+
+    assert result[1]["loss"] == pytest.approx(21.68) and result[1]["skip_reason"] is None
+    assert (result[2]["loss"], result[2]["skip_reason"]) == (None, "model_cannot_predict")
+
+
+def test_lap_one_losses_skips_lap_model_cannot_predict():
+    rows = [stop_lap(1, 1, "SOFT", 0, 0.02, 7.0, ["lap_1"]), stop_lap(2, 1, "HARD", 0, 0.02, 7.0, ["lap_1"])]
+
+    result = {r["driver_number"]: r for r in lap_one_losses(rows, SoftOnlyModel())}
+
+    assert result[1]["loss"] == pytest.approx(6.98)
+    assert (result[2]["loss"], result[2]["skip_reason"]) == (None, "model_cannot_predict")

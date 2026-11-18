@@ -70,6 +70,25 @@ def median_clean_lap_by_race_lap(laps, session_key):
         
 
 
+def _residuals(model, groups: list[list[dict]]) -> list[float | None]:
+    """Sum of (actual - predicted delta) over each group of rows; None for a group the model can't predict.
+
+    Predicts everything in one call, and only goes group by group if that call
+    raises ValueError (a compound or compound@circuit pair the model never saw).
+    """
+    try:
+        predicted = model.predict(pd.DataFrame([row for group in groups for row in group]))
+    except ValueError:
+        if len(groups) == 1:
+            return [None]
+        return [_residuals(model, [group])[0] for group in groups]
+    result, i = [], 0
+    for group in groups:
+        result.append(float(sum(row["delta"] - predicted[i + k] for k, row in enumerate(group))))
+        i += len(group)
+    return result
+
+
 def stop_losses(rows: list[dict], model) -> list[dict]:
     '''
     Time each pit stop cost beyond two normal racing laps (one pit-loss measurement per stop).
@@ -86,8 +105,10 @@ def stop_losses(rows: list[dict], model) -> list[dict]:
         the same on the out-lap (the next lap), in seconds: exactly what
         simulator.simulate leaves out when it predicts both as normal laps.
         A stop that can't be measured keeps its record with loss None and
-        skip_reason "no_out_lap", "safety_car" (either lap) or "no_time"
-        (either lap has no delta); measured stops have skip_reason None.
+        skip_reason "no_out_lap", "safety_car" (either lap), "no_time"
+        (either lap has no delta) or "model_cannot_predict" (a compound or
+        compound@circuit pair the model never saw, e.g. a pair only on
+        unclean laps); measured stops have skip_reason None.
         Empty list if there are no stops.
     '''
     by_key = {(r["session_key"], r["driver_number"], r["lap_number"]): r for r in rows}
@@ -110,12 +131,11 @@ def stop_losses(rows: list[dict], model) -> list[dict]:
             measured.append((record, row, out))
         stops.append(record)
 
-    if measured:
-        # One predict call for all in-laps and out-laps, in pairs.
-        laps = pd.DataFrame([lap for _, in_row, out_row in measured for lap in (in_row, out_row)])
-        predicted = model.predict(laps)
-        for i, (record, in_row, out_row) in enumerate(measured):
-            record["loss"] = float((in_row["delta"] - predicted[2 * i]) + (out_row["delta"] - predicted[2 * i + 1]))
+    losses = _residuals(model, [[in_row, out_row] for _, in_row, out_row in measured]) if measured else []
+    for (record, _, _), loss in zip(measured, losses):
+        if loss is None:
+            record["skip_reason"] = "model_cannot_predict"
+        record["loss"] = loss
     return stops
 
 
@@ -149,3 +169,38 @@ def pit_loss_by_circuit(losses: list[dict], years: list[int]) -> dict[str, dict]
         result[circuit] = {"median": median(values), "q25": q25, "q75": q75,
                            "measured": len(values), "skipped": dict(skipped[circuit])}
     return result
+
+
+def lap_one_losses(rows: list[dict], model) -> list[dict]:
+    '''
+    Time each lap 1 cost beyond a normal racing lap (standing start, first-lap traffic).
+
+    rows, model: as in stop_losses
+    returns: one dict per lap-1 row with "circuit", "year", "session_key",
+        "driver_number", "loss" (actual minus predicted delta, seconds) and
+        "skip_reason" ("safety_car", "no_time", "model_cannot_predict" or
+        None), the same shape as
+        stop_losses, so pit_loss_by_circuit gives the median per circuit.
+        The model never fits lap 1 (not a clean lap), so it predicts it as
+        a normal lap; this is the gap.
+    '''
+    records, measured = [], []
+    for row in rows:
+        if row["lap_number"] != 1:
+            continue
+        record = {"circuit": row["circuit"], "year": row["year"], "session_key": row["session_key"],
+                  "driver_number": row["driver_number"], "loss": None, "skip_reason": None}
+        if "safety_car" in row["exclusion_reasons"]:
+            record["skip_reason"] = "safety_car"
+        elif row["delta"] is None:
+            record["skip_reason"] = "no_time"
+        else:
+            measured.append((record, row))
+        records.append(record)
+
+    losses = _residuals(model, [[row] for _, row in measured]) if measured else []
+    for (record, _), loss in zip(measured, losses):
+        if loss is None:
+            record["skip_reason"] = "model_cannot_predict"
+        record["loss"] = loss
+    return records

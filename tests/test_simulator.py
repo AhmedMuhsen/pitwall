@@ -63,7 +63,7 @@ def test_simulate_hand_example():
     strategy = {"compounds": ["MEDIUM", "HARD"], "pit_laps": [2], "start_ages": [0, 3]}
 
     result = simulate(strategy, race_distance=6, circuit="Hungaroring", model=StubModel(),
-                      reference_lap=80.0, pit_loss=20.0, max_ages=SIM_MAX_AGES)
+                      reference_lap=80.0, pit_loss=20.0, lap_one_loss=0.0, max_ages=SIM_MAX_AGES)
 
     assert result["laps"]["predicted_delta"].tolist() == pytest.approx(
         [1/6, 0.1 + 2/6, 0.8, 0.4 + 4/6, 0.5 + 5/6, 1.6])
@@ -80,7 +80,7 @@ def test_simulate_raises_on_compound_model_never_saw():
 
     with pytest.raises(ValueError, match="HARD"):
         simulate(strategy, race_distance=4, circuit="Monza", model=model,
-                 reference_lap=80.0, pit_loss=20.0, max_ages=SIM_MAX_AGES)
+                 reference_lap=80.0, pit_loss=20.0, lap_one_loss=0.0, max_ages=SIM_MAX_AGES)
 
 
 def test_simulate_raises_on_missing_prediction():
@@ -88,7 +88,19 @@ def test_simulate_raises_on_missing_prediction():
 
     with pytest.raises(ValueError, match="missing"):
         simulate(strategy, race_distance=4, circuit="Monza", model=NanModel(),
-                 reference_lap=80.0, pit_loss=20.0, max_ages=SIM_MAX_AGES)
+                 reference_lap=80.0, pit_loss=20.0, lap_one_loss=0.0, max_ages=SIM_MAX_AGES)
+
+
+def test_simulate_adds_lap_one_loss_to_lap_one_only():
+    strategy = {"compounds": ["MEDIUM", "HARD"], "pit_laps": [2], "start_ages": [0, 3]}
+    base = simulate(strategy, race_distance=6, circuit="Hungaroring", model=StubModel(),
+                    reference_lap=80.0, pit_loss=20.0, lap_one_loss=0.0, max_ages=SIM_MAX_AGES)
+    with_start = simulate(strategy, race_distance=6, circuit="Hungaroring", model=StubModel(),
+                          reference_lap=80.0, pit_loss=20.0, lap_one_loss=5.0, max_ages=SIM_MAX_AGES)
+
+    assert with_start["total_time"] == pytest.approx(base["total_time"] + 5.0)
+    assert (with_start["laps"]["lap_time"] - base["laps"]["lap_time"]).tolist() == pytest.approx(
+        [5.0, 0, 0, 0, 0, 0])
 
 
 def test_simulate_returns_range_flags():
@@ -96,7 +108,7 @@ def test_simulate_returns_range_flags():
     strategy = {"compounds": ["SOFT", "HARD"], "pit_laps": [30]}
 
     result = simulate(strategy, race_distance=31, circuit="Monza", model=StubModel(),
-                      reference_lap=80.0, pit_loss=20.0, max_ages=SIM_MAX_AGES)
+                      reference_lap=80.0, pit_loss=20.0, lap_one_loss=0.0, max_ages=SIM_MAX_AGES)
 
     assert len(result["flags"]) == 1 and "SOFT@Monza" in result["flags"][0]
     assert result["total_time"] > 0
@@ -107,7 +119,7 @@ def test_simulate_refuses_invalid_strategy():
 
     with pytest.raises(ValueError, match="two different dry compounds"):
         simulate(strategy, race_distance=4, circuit="Monza", model=StubModel(),
-                 reference_lap=80.0, pit_loss=20.0, max_ages=SIM_MAX_AGES)
+                 reference_lap=80.0, pit_loss=20.0, lap_one_loss=0.0, max_ages=SIM_MAX_AGES)
 
 
 def test_validate_strategy_accepts_normal_two_stop():

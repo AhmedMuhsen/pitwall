@@ -1,10 +1,14 @@
 from pathlib import Path
+from statistics import median
 import pandas as pd
 import pyarrow.parquet as pq
 
 from pitwall.evaluation import leave_one_race_out, score, score_by_group, split_by_year, leave_one_year_out
 from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel, build_pipeline
+from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, stop_losses
+from pitwall.backtest import backtest_race
+from pitwall.simulator import observed_max_ages
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")
 # Tyre-age buckets for the error slices: 0-9, 10-19, 20-29, 30+ laps.
@@ -115,6 +119,63 @@ def print_cross_year(rows):
             print(table.round(3).to_string())
 
 
+def cross_year_backtest(rows, wear_by_pair=False, pooling_alpha=None):
+    """Backtest records for the safety-car-free 2023 and 2024 races, each with model, pit loss,
+    lap-1 loss and observed range estimated on the other year only."""
+    records = []
+    for year, fold_train, fold_validation in leave_one_year_out(rows, [2023, 2024]):
+        train_years = sorted({row["year"] for row in fold_train})
+        model = fit_model(True, wear_by_pair, fold_train, "race_fraction", pooling_alpha)
+        pit_loss = pit_loss_by_circuit(stop_losses(fold_train, model), train_years)
+        lap_one_records = lap_one_losses(fold_train, model)
+        lap_one = pit_loss_by_circuit(lap_one_records, train_years)
+        # A circuit whose lap 1 was neutralised in the training year (Yas Marina 2024 VSC) has no
+        # lap-1 loss; it gets the median over all circuits that year. Same race for every model.
+        lap_one_all = median(r["loss"] for r in lap_one_records if r["loss"] is not None)
+        max_ages = observed_max_ages(max_clean_tyre_age(fold_train), train_years)
+
+        races = {}
+        for row in fold_validation:
+            races.setdefault(row["session_key"], []).append(row)
+        for race in races.values():
+            if any("safety_car" in row["exclusion_reasons"] for row in race):
+                continue
+            circuit = race[0]["circuit"]
+            if circuit in lap_one:
+                lap_one_loss = lap_one[circuit]["median"]
+            else:
+                lap_one_loss = lap_one_all
+                print(f"    {circuit} {year}: no lap-1 loss in {train_years}, using all-circuit median {lap_one_all:.1f}s")
+            records += backtest_race(race, model, pit_loss[circuit]["median"], lap_one_loss, max_ages)
+    return records
+
+
+def print_cross_year_backtest(rows):
+    """Race-total backtest, cross-year, for B_frac, C_frac and the pooled alphas (chooses alpha)."""
+    print("\nCross-year race-total backtest (safety-car-free 2023 and 2024 races, lead-lap finishers)")
+    models = [("B_frac", False, None), ("C_frac", True, None)] + [(f"P_{a}", False, a) for a in POOLING_ALPHAS]
+    results = {}
+    for name, wear_by_pair, alpha in models:
+        df = pd.DataFrame(cross_year_backtest(rows, wear_by_pair, alpha))
+        done = df[df["predicted"].notna()].copy()
+        done["error_per_lap"] = done["error"] / done["laps"]
+        flagged = (done["flags"].str.len() > 0).sum()
+        print(
+            f"  {name:<9} n={len(done):>3} flagged={flagged:>2} skipped={len(df) - len(done):>3}  "
+            f"MAE={done['error'].abs().mean():6.2f}s  bias={done['error'].mean():+6.2f}s  "
+            f"MAE/lap={done['error_per_lap'].abs().mean():.3f}s"
+        )
+        results[name] = done
+    print("  skip reasons (B_frac):", pd.DataFrame(cross_year_backtest(rows))["skip_reason"].value_counts().to_dict())
+
+    for metric, func in (("MAE", lambda e: e.abs().mean()), ("bias", lambda e: e.mean())):
+        table = pd.concat({name: done.groupby(["year", "circuit"])["error"].agg(func)
+                           for name, done in results.items()}, axis=1)
+        table["n"] = results["B_frac"].groupby(["year", "circuit"]).size()
+        print(f"\nCross-year backtest {metric} by race (seconds)")
+        print(table.round(1).to_string())
+
+
 def print_held_out_2024(train):
     """Models on held-out 2024 races: overall, then B (fuel by lap) vs B_frac (fuel by race fraction)."""
     print("\nHeld-out 2024 races (fit on the other four), clean laps")
@@ -188,6 +249,7 @@ def main():
     print_slices(train, test)
     print_held_out_2024(train)
     print_cross_year(rows)
+    print_cross_year_backtest(rows)
 
 
 if __name__ == "__main__":

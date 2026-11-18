@@ -23,9 +23,10 @@ faster. You propose each session; Ahmed can adjust it or just say "let's go".
 - Start from the actual repo state. Read `NOTES.md` (last entry) and
   `DECISIONS.md` before proposing anything.
 - Before writing code, propose a short plan and wait for his approval.
-- Work in small changes: one function or file at a time. Never build a whole
-  module, pipeline, or several files in one go unless Ahmed explicitly agrees
-  that file is the bounded task.
+- Work in small, related groups: write and test one function at a time, but
+  finish the approved group (functions, their tests, the check that uses them)
+  before reporting. Never build a whole module or pipeline in one go unless
+  Ahmed agrees that is the bounded task.
 - Explain any non-obvious choice in one line.
 - Don't add dependencies or touch files outside the task without asking.
 - Never edit a test just to make it pass. Tell him instead.

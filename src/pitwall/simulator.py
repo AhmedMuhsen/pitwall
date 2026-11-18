@@ -144,7 +144,7 @@ def stint_range_flags(strategy: dict, race_distance: int, circuit: str, max_ages
 
 
 def simulate(strategy: dict, race_distance: int, circuit: str, model,
-             reference_lap: float, pit_loss: float, max_ages: dict) -> dict:
+             reference_lap: float, pit_loss: float, lap_one_loss: float, max_ages: dict) -> dict:
     '''
     Predicted lap times and total race time for one strategy.
 
@@ -154,12 +154,14 @@ def simulate(strategy: dict, race_distance: int, circuit: str, model,
     reference_lap: the driver's median clean lap in this race, in seconds
     pit_loss: time lost per stop in seconds (pit-lane time minus the same
         stretch at racing speed), added once per stop
+    lap_one_loss: extra time on lap 1 in seconds (standing start), added
+        to lap 1's lap_time; from analysis.lap_one_losses
     max_ages: dict (circuit, compound) -> oldest clean tyre age in the
         training years, from observed_max_ages
 
     returns: dict with
         "laps": strategy_laps table plus "predicted_delta" and "lap_time"
-            (reference_lap + predicted_delta)
+            (reference_lap + predicted_delta, plus lap_one_loss on lap 1)
         "pit_stops": number of stops
         "total_time": sum of lap_time plus pit_stops * pit_loss, in seconds
         "flags": stint_range_flags messages; the total is still computed,
@@ -180,6 +182,7 @@ def simulate(strategy: dict, race_distance: int, circuit: str, model,
     if missing:
         raise ValueError(f"Model returned missing predictions for laps {missing}")
     laps["lap_time"] = reference_lap + laps["predicted_delta"]
+    laps.loc[laps["lap_number"] == 1, "lap_time"] += lap_one_loss
 
     pit_stops = len(strategy["pit_laps"])
     return {

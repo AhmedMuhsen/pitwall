@@ -16,8 +16,7 @@ DATASET_PATH = Path(__file__).parent / "data" / "processed" / "lap_dataset.parqu
 BASELINE = "actual"
 COLOURS = {"faster in every scenario": "#2e7d32", "depends on assumptions": "#8a8a8a",
            "slower in every scenario": "#c62828"}
-VERDICT_COLOURS = {"clearly_faster": "#1f6fb2", "maybe_faster": "#e0a100",
-                   "baseline_best": "#2e7d32", "baseline_best_everywhere": "#2e7d32"}
+VERDICT_COLOURS = {"agrees": "#2e7d32", "too_close": "#8a8a8a", "leans": "#e0a100", "prefers": "#1f6fb2"}
 
 
 @st.cache_resource
@@ -97,29 +96,31 @@ if year not in TRAIN_YEARS:
     st.caption(f"{year} races were never used to fit the model: this race is out-of-sample.")
 
 r = answer["range"]
-# The model only knows tyre age and fuel, so it always prefers evenly split stints. Say so next to
-# every "faster" answer: it is what the model prefers, not proof the team got it wrong.
+# The model only knows tyre age and fuel, so it tends to prefer evenly split stints. Say so next to
+# every "prefers" answer: it is what the model prefers, not proof the team got it wrong.
 blind_spot = ("The model can't see why teams pit when they do (undercuts, traffic, tyre allocation, "
               "tyres suddenly dropping off), so it tends to prefer evenly split stints. "
               "Read this as what the model prefers, not as a mistake by the team.")
-if answer["kind"] == "clearly_faster":
-    verdict_box(VERDICT_COLOURS["clearly_faster"],
-                f"The model prefers a different strategy, by about {-r['gap']:.0f} s.",
-                f"<b>{names[answer['strategy']]}</b>: {-r['gap']:.1f} s quicker at the best estimate, and still "
-                f"{-r['max_gap']:.1f} to {-r['min_gap']:.1f} s quicker across the pit-loss and tyre-wear ranges "
-                f"tested.<br><span style='opacity: 0.8'>{blind_spot}</span>")
-elif answer["kind"] == "maybe_faster":
-    worst = (f"up to {r['max_gap']:.1f} s slower" if r["max_gap"] >= 0.05 else "level with the real strategy")
-    verdict_box(VERDICT_COLOURS["maybe_faster"], "Too close to call under the model.",
-                f"Closest: <b>{names[answer['strategy']]}</b>, {-r['gap']:.1f} s quicker at the best estimate, but "
-                f"{worst} if pit loss or tyre wear differ from the estimates.")
-elif answer["kind"] == "baseline_best":
-    verdict_box(VERDICT_COLOURS["baseline_best"], "The model agrees with the real strategy.",
-                "At the best estimate it was the quickest of those compared, though some alternatives could "
-                "beat it if pit loss or tyre wear differ from the estimates.")
+if answer["kind"] == "agrees":
+    verdict_box(VERDICT_COLOURS["agrees"], "The model agrees with the real strategy.",
+                "None of the alternatives is faster at the best estimate.")
 else:
-    verdict_box(VERDICT_COLOURS["baseline_best_everywhere"], "The model agrees with the real strategy.",
-                "It beat every alternative across the pit-loss and tyre-wear ranges tested.")
+    how_sure = {
+        "too_close": ("Too close for the model to call.",
+                      "Under about 3 s the model picked the faster of two real strategies only about half the time "
+                      "in tests, no better than a coin flip."),
+        "leans": (f"The model leans towards a different strategy, by about {-r['gap']:.0f} s.",
+                  "Between 3 and 10 s it picked the faster of two real strategies about 2 times in 3 in tests."),
+        "prefers": (f"The model prefers a different strategy, by about {-r['gap']:.0f} s.",
+                    "Above 10 s it picked the faster of two real strategies about 9 times in 10 in tests."),
+    }[answer["kind"]]
+    robust = ("It stays faster across every pit-loss and tyre-wear setting tested."
+              if answer["robust"] else
+              f"But it is {r['max_gap']:+.1f} s at its worst pit-loss and tyre-wear setting.")
+    verdict_box(VERDICT_COLOURS[answer["kind"]], how_sure[0],
+                f"<b>{names[answer['strategy']]}</b>: {-r['gap']:.1f} s quicker at the best estimate. {robust}"
+                f"<br>{how_sure[1]} (Tests were on pairs of real strategies from 2023-2025.)"
+                f"<br><span style='opacity: 0.8'>{blind_spot}</span>")
 
 # --- The main chart: each alternative's gap with its range -----------------------------------
 st.markdown("#### Time compared with the real strategy")

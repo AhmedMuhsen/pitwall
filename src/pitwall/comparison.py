@@ -450,36 +450,33 @@ def gap_ranges(sensitivity_rows: list[dict], baseline: str, base_pit_label: str 
     return sorted(result, key=lambda e: e["gap"])
 
 
-def verdict(ranges: list[dict], min_gap: float = 1.0) -> dict:
+def verdict(ranges: list[dict], close: float = 3.0, strong: float = 10.0) -> dict:
     '''
-    The one-line answer: was any alternative faster than the baseline?
+    The one-line answer: does the model prefer an alternative to the baseline?
 
     ranges: gap_ranges result. Flagged alternatives (tyres older than anything
-        observed) never count as faster: their totals are extrapolations.
-    min_gap: seconds an alternative must be faster by, at the best estimate, to
-        count at all. Default 1 s over a race (about 0.02 s per lap), well below
-        what the model can resolve, so smaller gaps are treated as level.
+        observed) are never the answer: their totals are extrapolations.
+    close, strong: seconds over the race. In the strategy-pair check (DECISIONS
+        2026-11-18), the model's predicted faster car really was faster only about
+        half the time under 3 s, about 2 times in 3 from 3 to 10 s and about 9
+        times in 10 above 10 s.
 
-    returns: dict with "kind" and "strategy" (the alternative it is about, or
-    None) plus that strategy's gap_ranges entry under "range" (or None):
-        "clearly_faster": an alternative is faster in every scenario and by at
-            least min_gap at the best estimate (the fastest such one)
-        "maybe_faster": none is, but one is faster by at least min_gap at the
-            best estimate (the fastest such one)
-        "baseline_best": nothing is faster by min_gap at the best estimate, but
-            some alternative is faster in some scenario
-        "baseline_best_everywhere": every alternative is slower in every scenario
+    returns: dict with "kind", "strategy" (the best alternative, or None), "range"
+    (its gap_ranges entry, or None) and "robust" (True if it is faster in every
+    sensitivity scenario). "kind" is:
+        "agrees": no unflagged alternative is faster at the best estimate
+        "too_close": the best alternative is faster by less than `close`
+        "leans": faster by `close` up to `strong`
+        "prefers": faster by `strong` or more
     '''
     alternatives = [r for r in ranges if r["confidence"] != "baseline" and not r["flagged"]]
-    clearly = [r for r in alternatives if r["confidence"] == "faster in every scenario" and r["gap"] <= -min_gap]
-    if clearly:
-        return {"kind": "clearly_faster", "strategy": clearly[0]["strategy"], "range": clearly[0]}
-    maybe = [r for r in alternatives if r["gap"] <= -min_gap]
-    if maybe:
-        return {"kind": "maybe_faster", "strategy": maybe[0]["strategy"], "range": maybe[0]}
-    if all(r["confidence"] == "slower in every scenario" for r in alternatives):
-        return {"kind": "baseline_best_everywhere", "strategy": None, "range": None}
-    return {"kind": "baseline_best", "strategy": None, "range": None}
+    best = min(alternatives, key=lambda r: r["gap"], default=None)
+    if best is None or best["gap"] >= 0:
+        return {"kind": "agrees", "strategy": None, "range": None, "robust": False}
+    size = -best["gap"]
+    kind = "too_close" if size < close else "leans" if size < strong else "prefers"
+    return {"kind": kind, "strategy": best["strategy"], "range": best,
+            "robust": best["confidence"] == "faster in every scenario"}
 
 
 def cumulative_gap(laps: pd.DataFrame, strategies: dict[str, dict], pit_loss: float,

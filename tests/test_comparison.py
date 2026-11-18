@@ -263,20 +263,37 @@ def test_gap_ranges_slower_everywhere_and_missing_best_estimate():
         gap_ranges(rows, "one_stop")   # no "median" label in these rows
 
 
-def test_verdict_cases():
+def test_verdict_tiers():
     base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
-    clear = ranges_row("a", -5.0, -8.0, -1.0, "faster in every scenario")
-    maybe = ranges_row("b", -1.5, -3.0, 2.0, "depends on assumptions")
-    flagged = ranges_row("c", -20.0, -25.0, -15.0, "faster in every scenario", flagged=True)
-    slower = ranges_row("d", 4.0, 1.0, 7.0, "slower in every scenario")
-    close = ranges_row("e", 1.0, -1.0, 3.0, "depends on assumptions")
+    far = ranges_row("far", -12.0, -15.0, -9.0, "faster in every scenario")
+    mid = ranges_row("mid", -5.0, -8.0, 2.0, "depends on assumptions")
+    near = ranges_row("near", -2.9, -4.0, -1.0, "faster in every scenario")
+    slower = ranges_row("slow", 4.0, 1.0, 7.0, "slower in every scenario")
 
-    assert verdict([flagged, clear, maybe, base])["strategy"] == "a"
-    assert verdict([flagged, clear, maybe, base])["kind"] == "clearly_faster"
-    # The flagged one is faster everywhere, but it's an extrapolation, so it never counts.
-    assert verdict([flagged, maybe, base, slower]) == {"kind": "maybe_faster", "strategy": "b", "range": maybe}
-    assert verdict([base, close, slower])["kind"] == "baseline_best"
-    assert verdict([base, slower])["kind"] == "baseline_best_everywhere"
+    assert verdict([base, far, mid])["kind"] == "prefers"
+    assert verdict([base, far, mid])["strategy"] == "far"
+    assert verdict([base, far, mid])["robust"] is True
+    assert verdict([base, mid, slower])["kind"] == "leans"
+    assert verdict([base, mid, slower])["robust"] is False
+    assert verdict([base, near, slower])["kind"] == "too_close"
+    assert verdict([base, slower]) == {"kind": "agrees", "strategy": None, "range": None, "robust": False}
+
+
+def test_verdict_boundaries_and_custom_thresholds():
+    base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
+
+    assert verdict([base, ranges_row("a", -3.0, -3.0, -3.0, "faster in every scenario")])["kind"] == "leans"
+    assert verdict([base, ranges_row("a", -10.0, -10.0, -10.0, "faster in every scenario")])["kind"] == "prefers"
+    assert verdict([base, ranges_row("a", -5.0, -5.0, -5.0, "faster in every scenario")], close=6.0)["kind"] == "too_close"
+
+
+def test_verdict_ignores_flagged_alternatives():
+    base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
+    flagged = ranges_row("c", -20.0, -25.0, -15.0, "faster in every scenario", flagged=True)
+    mid = ranges_row("b", -5.0, -8.0, 2.0, "depends on assumptions")
+
+    assert verdict([base, flagged, mid])["strategy"] == "b"
+    assert verdict([base, flagged])["kind"] == "agrees"
 
 
 def test_cumulative_gap_hand_example():
@@ -308,12 +325,3 @@ def test_compare_driver_candidates_start_on_the_real_first_set():
     assert strategies["2stop_MHH"]["start_ages"] == [3, 0, 0]
     assert strategies["1stop_HM"]["start_ages"] == [0, 0]          # starts on HARD: a new set
     assert strategies["2stop_SHH"]["start_ages"] == [0, 0, 0]
-
-
-def test_verdict_treats_gaps_under_min_gap_as_level():
-    base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
-    tiny_everywhere = ranges_row("a", -0.4, -0.6, -0.2, "faster in every scenario")
-    tiny_maybe = ranges_row("b", -0.9, -3.0, 2.0, "depends on assumptions")
-
-    assert verdict([tiny_everywhere, tiny_maybe, base])["kind"] == "baseline_best"
-    assert verdict([tiny_everywhere, base], min_gap=0.3)["kind"] == "clearly_faster"

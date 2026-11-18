@@ -733,3 +733,18 @@ One entry per real decision. Format:
   probability we can't estimate from 4 races.
 - **What would make us reconsider** — Traffic penalty not being estimable from lap timing, or
   v2 failing to improve the yardstick (then it stays off by default).
+
+## 2026-11-18 — App verdict has three tiers from the strategy-pair check
+
+- **Decision** — The verdict says what the model prefers, never that a strategy was better.
+  Four outcomes by the best unflagged alternative's gap at the best estimate: faster by under
+  3 s "too close for the model to call", 3-10 s "leans towards", 10 s or more "prefers"; none
+  faster "agrees". It always names the model's blind spot (undercuts, traffic, tyre allocation).
+- **Requirement** — Rule 9 (no optimal-strategy claims). A first version said "faster under
+  every assumption" for 120 of 124 cars.
+- **Options** — No margin; a fixed 1 s margin (a guess); tiers from the pair check; one cut-off.
+- **Choice and reason** — Tiers. In the pair check the predicted faster car really was faster
+  about 55% under 3 s (n=124 pairs), about 65% at 3-10 s, about 90% above 10 s. Thresholds
+  are in `comparison.verdict`; the headline states the hit rate in plain words.
+- **What would make us reconsider** — Traffic or safety-car replay (v2) changing these hit
+  rates; re-run `print_strategy_pair_check` and move the thresholds.

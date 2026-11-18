@@ -7,6 +7,7 @@ import pandas as pd
 from pitwall.features import driver_reference_laps
 from pitwall.processing import race_distance
 from pitwall.simulator import simulate
+from pitwall.traffic import real_gaps, real_lap_penalties
 
 
 def actual_strategy(driver_rows: list[dict]) -> dict:
@@ -37,7 +38,8 @@ def actual_strategy(driver_rows: list[dict]) -> dict:
             "start_ages": [s["tyre_age"] for s in stints]}
 
 
-def first_half_pace(driver_rows: list[dict], model, race_distance: int, min_clean_laps: int = 5) -> float | None:
+def first_half_pace(driver_rows: list[dict], model, race_distance: int, min_clean_laps: int = 5,
+                    penalties: dict[int, float] | None = None) -> float | None:
     '''
     A car's pace from the first half of the race only, with the model's tyre and
     fuel effects taken out.
@@ -48,9 +50,12 @@ def first_half_pace(driver_rows: list[dict], model, race_distance: int, min_clea
     model: fitted model, predict(DataFrame) -> delta in seconds
     race_distance: laps in the race; the first half is laps 1..race_distance // 2
     min_clean_laps: fewest first-half clean laps to estimate from
+    penalties: optional lap_number -> traffic penalty in seconds
+        (traffic.real_lap_penalties); if given it is taken off each lap too, so
+        a car stuck in traffic early on isn't given a slow pace
 
     returns: median over the first-half clean laps of lap_duration minus the
-    model's predicted delta, in seconds; None if there are fewer than
+    model's predicted delta (and minus the traffic penalty), in seconds; None if there are fewer than
     min_clean_laps such laps. Whole-race pace would already contain the effect
     of the strategy being tested, so the scored laps never set the pace.
     '''
@@ -58,7 +63,10 @@ def first_half_pace(driver_rows: list[dict], model, race_distance: int, min_clea
     clean = pd.DataFrame([r for r in driver_rows if r["lap_number"] <= half and r["is_clean"]])
     if len(clean) < min_clean_laps:
         return None
-    return float(median(clean["lap_duration"] - model.predict(clean)))
+    adjusted = clean["lap_duration"] - model.predict(clean)
+    if penalties is not None:
+        adjusted = adjusted - clean["lap_number"].map(lambda lap: penalties.get(lap, 0.0))
+    return float(median(adjusted))
 
 
 def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int], pit_loss: float) -> dict:
@@ -98,7 +106,7 @@ def error_components(driver_laps: list[dict], simulated_laps, pit_laps: list[int
 
 
 def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: float,
-                  max_ages: dict, pace: str = "race_median") -> list[dict]:
+                  max_ages: dict, pace: str = "race_median", traffic_table: dict | None = None) -> list[dict]:
     '''
     Predicted vs actual total race time for every driver in one race.
 
@@ -110,6 +118,10 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
         estimated without this race's year
     pace: "race_median" (default) uses the driver's median clean lap in this race as
         the reference lap (rule 1); "first_half" uses first_half_pace instead.
+    traffic_table: optional traffic.fit_traffic_penalty result (estimated without this
+        race's year). Each car sits where it really was, so every lap gets the penalty
+        of its real gap to the car ahead; it is added to the simulated lap times and to
+        the predicted total, and taken out of a first-half pace.
 
     returns: one dict per driver with "circuit", "year", "session_key",
         "driver_number", "laps", "predicted", "actual" and "error" (predicted
@@ -130,6 +142,7 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
 
     distance = race_distance(race_rows)
     references = driver_reference_laps(race_rows)
+    gaps = real_gaps(race_rows) if traffic_table is not None else None
     by_driver = defaultdict(list)
     for row in race_rows:
         by_driver[row["driver_number"]].append(row)
@@ -145,8 +158,15 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
             record["skip_reason"] = "not_full_distance"
             records.append(record)
             continue
+        penalties = None
+        if traffic_table is not None:
+            try:
+                pit_laps = actual_strategy(laps)["pit_laps"]
+            except ValueError:
+                pit_laps = []        # the simulator will refuse this car below
+            penalties = real_lap_penalties(driver, gaps, traffic_table, pit_laps, distance)
         if pace == "first_half":
-            reference = first_half_pace(laps, model, distance)
+            reference = first_half_pace(laps, model, distance, penalties=penalties)
         elif pace == "race_median":
             reference = references.get((first["session_key"], driver))
         else:
@@ -165,15 +185,20 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
             records.append(record)
             continue
         actual = sum(r["lap_duration"] for r in laps)
-        record.update(predicted=result["total_time"], actual=actual,
-                      error=result["total_time"] - actual, flags=result["flags"],
-                      components=error_components(laps, result["laps"], strategy["pit_laps"], pit_loss))
+        simulated_laps, predicted = result["laps"], result["total_time"]
+        if penalties:
+            simulated_laps = simulated_laps.assign(lap_time=simulated_laps["lap_time"]
+                                                   + simulated_laps["lap_number"].map(penalties).fillna(0.0))
+            predicted += sum(penalties.values())
+        record.update(predicted=predicted, actual=actual,
+                      error=predicted - actual, flags=result["flags"],
+                      components=error_components(laps, simulated_laps, strategy["pit_laps"], pit_loss))
         records.append(record)
     return records
 
 
 def second_half_record(driver_rows: list[dict], model, race_distance: int, pit_loss: float,
-                       max_ages: dict, min_clean_laps: int = 5) -> dict:
+                       max_ages: dict, min_clean_laps: int = 5, traffic: dict | None = None) -> dict:
     '''
     One car's second half of a race: real time vs the simulator's, with the car's
     pace taken only from the first half (so the scored laps never set the pace).
@@ -187,6 +212,10 @@ def second_half_record(driver_rows: list[dict], model, race_distance: int, pit_l
     race_distance: laps in the race; the first half is laps 1..race_distance // 2
     pit_loss, max_ages: as in simulator.simulate
     min_clean_laps: fewest first-half clean laps to estimate the pace from
+    traffic: optional {"gaps": traffic.real_gaps of the race, "table":
+        traffic.fit_traffic_penalty result}. The car sits where it really was, so each
+        lap's penalty comes from its real gap: it is taken out of the first-half pace
+        and added to the predicted second half.
 
     returns: dict with "session_key", "circuit", "year", "driver_number",
     "strategy" (actual_strategy), "pace" (median over first-half clean laps of
@@ -206,7 +235,11 @@ def second_half_record(driver_rows: list[dict], model, race_distance: int, pit_l
               "driver_number": first["driver_number"], "strategy": strategy, "pace": None,
               "scored_laps": race_distance - half, "real": None, "predicted": None, "stops": stops,
               "pit_loss": pit_loss, "skip_reason": None}
-    pace = first_half_pace(laps, model, race_distance, min_clean_laps)
+    penalties = None
+    if traffic is not None:
+        penalties = real_lap_penalties(first["driver_number"], traffic["gaps"], traffic["table"],
+                                       strategy["pit_laps"], race_distance)
+    pace = first_half_pace(laps, model, race_distance, min_clean_laps, penalties)
     if pace is None:
         record["skip_reason"] = "too_few_first_half_laps"
         return record
@@ -218,7 +251,8 @@ def second_half_record(driver_rows: list[dict], model, race_distance: int, pit_l
         return record
     second = sim["laps"]["lap_number"] > half
     record.update(pace=pace, real=sum(r["lap_duration"] for r in laps if r["lap_number"] > half),
-                  predicted=float(sim["laps"].loc[second, "lap_time"].sum()) + stops * pit_loss)
+                  predicted=float(sim["laps"].loc[second, "lap_time"].sum()) + stops * pit_loss
+                  + sum(p for lap, p in (penalties or {}).items() if lap > half))
     return record
 
 

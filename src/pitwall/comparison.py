@@ -14,6 +14,8 @@ from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel
 from pitwall.processing import race_distance
 from pitwall.simulator import observed_max_ages, simulate, validate_strategy
+from pitwall.traffic import (fit_traffic_penalty, real_gaps, real_lap_penalties, start_times,
+                             traffic_timeline)
 
 # Final model and training years: DECISIONS 2026-11-17 and 2026-11-18.
 FINAL_ALPHA = 100_000
@@ -54,9 +56,29 @@ def candidate_strategies(race_distance: int) -> dict[str, dict]:
     return strategies
 
 
+def _run_strategy(strategy: dict, race_distance: int, circuit: str, model, reference_lap: float,
+                  pit_loss: float, lap_one_loss: float, max_ages: dict, wear_offset: float,
+                  traffic: dict | None, anchor: dict | None) -> dict:
+    """simulate plus the wear offset, and with `traffic` the replayed-field timeline.
+    Returns "total", "laps" (lap_number, lap_time without pit loss, with the traffic penalty),
+    "flags" and "cum" (traffic_timeline's elapsed time per lap, None without traffic).
+    Raises ValueError as simulate does."""
+    sim = simulate(strategy, race_distance, circuit, model, reference_lap, pit_loss, lap_one_loss, max_ages)
+    laps = sim["laps"][["lap_number", "lap_time"]].assign(
+        lap_time=sim["laps"]["lap_time"] + wear_offset * sim["laps"]["tyre_age"])
+    if traffic is None:
+        return {"total": float(laps["lap_time"].sum() + sim["pit_stops"] * pit_loss), "laps": laps,
+                "flags": sim["flags"], "cum": None}
+    timeline = traffic_timeline(laps, strategy["pit_laps"], pit_loss, traffic["real_start"], traffic["field"],
+                                traffic["table"], anchor)
+    laps = timeline["laps"][["lap_number", "lap_time"]]
+    return {"total": float(laps["lap_time"].sum() + sim["pit_stops"] * pit_loss), "laps": laps,
+            "flags": sim["flags"], "cum": timeline["cum"]}
+
+
 def compare_strategies(strategies: dict[str, dict], race_distance: int, circuit: str, model,
                        reference_lap: float, pit_loss: float, lap_one_loss: float, max_ages: dict,
-                       baseline: str, wear_offset: float = 0.0) -> list[dict]:
+                       baseline: str, wear_offset: float = 0.0, traffic: dict | None = None) -> list[dict]:
     '''
     Simulated total time of each strategy, ranked, with the gap to a baseline strategy.
 
@@ -65,8 +87,12 @@ def compare_strategies(strategies: dict[str, dict], race_distance: int, circuit:
         max_ages: as in simulator.simulate
     baseline: name of the strategy the gaps are measured against
     wear_offset: extra wear in seconds per lap of tyre age, added to every
-        compound (sensitivity test). The model is linear in tyre age, so this
-        adds wear_offset * sum(tyre_age) to the total.
+        compound (sensitivity test), to the lap times before any traffic is applied
+    traffic: optional dict with "table" (traffic.fit_traffic_penalty), "field" (start
+        times of the other cars), "real_start" (this car's real lap start times) and
+        "anchor" (the name of the strategy the car really drove, which is in
+        strategies). Every strategy then runs against the replayed field
+        (traffic.traffic_timeline), positioned relative to the real strategy.
 
     returns: one dict per strategy, fastest first, with "strategy", "total"
     (seconds), "gap" (total minus the baseline's; positive = slower), "rank"
@@ -74,21 +100,29 @@ def compare_strategies(strategies: dict[str, dict], race_distance: int, circuit:
     strategy the simulator refuses keeps a row at the end with total, gap and
     rank None and the message in "error".
 
-    raises ValueError if baseline isn't in strategies or can't be simulated.
+    raises ValueError if baseline isn't in strategies or can't be simulated, or if the
+    traffic anchor strategy isn't in strategies or can't be simulated.
     '''
     if baseline not in strategies:
         raise ValueError(f"Baseline {baseline!r} is not one of {sorted(strategies)}")
+    shared = (race_distance, circuit, model, reference_lap, pit_loss, lap_one_loss, max_ages, wear_offset, traffic)
+    anchor_cum = None
+    if traffic is not None:
+        if traffic["anchor"] not in strategies:
+            raise ValueError(f"Traffic anchor {traffic['anchor']!r} is not one of {sorted(strategies)}")
+        try:
+            anchor_cum = _run_strategy(strategies[traffic["anchor"]], *shared, None)["cum"]
+        except ValueError as e:
+            raise ValueError(f"Traffic anchor {traffic['anchor']!r} can't be simulated: {e}") from e
     results = []
     for name, strategy in strategies.items():
         row = {"strategy": name, "total": None, "gap": None, "rank": None, "flags": [], "error": None}
         try:
-            sim = simulate(strategy, race_distance, circuit, model, reference_lap,
-                           pit_loss, lap_one_loss, max_ages)
+            run = _run_strategy(strategy, *shared, None if name == (traffic or {}).get("anchor") else anchor_cum)
         except ValueError as e:
             row["error"] = str(e)
         else:
-            row["total"] = sim["total_time"] + wear_offset * float(sim["laps"]["tyre_age"].sum())
-            row["flags"] = sim["flags"]
+            row["total"], row["flags"] = run["total"], run["flags"]
         results.append(row)
 
     totals = {row["strategy"]: row["total"] for row in results}
@@ -104,7 +138,7 @@ def compare_strategies(strategies: dict[str, dict], race_distance: int, circuit:
 
 def sensitivity(strategies: dict[str, dict], race_distance: int, circuit: str, model,
                 reference_lap: float, pit_losses: dict[str, float], lap_one_loss: float,
-                max_ages: dict, baseline: str, wear_offsets: list[float]) -> list[dict]:
+                max_ages: dict, baseline: str, wear_offsets: list[float], traffic: dict | None = None) -> list[dict]:
     '''
     compare_strategies rerun for every pit-loss value and wear offset.
 
@@ -112,7 +146,7 @@ def sensitivity(strategies: dict[str, dict], race_distance: int, circuit: str, m
         "median": 21.0, "q75": 22.4} from analysis.pit_loss_by_circuit
     wear_offsets: extra wear values in seconds per lap of age, e.g.
         [-0.05, 0.0, 0.05]
-    other arguments: as in compare_strategies
+    traffic and the other arguments: as in compare_strategies
 
     returns: compare_strategies rows, each with "pit_loss_label", "pit_loss"
     and "wear_offset" added, for every (pit loss, wear offset) scenario.
@@ -123,7 +157,7 @@ def sensitivity(strategies: dict[str, dict], race_distance: int, circuit: str, m
     for label, pit_loss in pit_losses.items():
         for offset in wear_offsets:
             for row in compare_strategies(strategies, race_distance, circuit, model, reference_lap,
-                                          pit_loss, lap_one_loss, max_ages, baseline, offset):
+                                          pit_loss, lap_one_loss, max_ages, baseline, offset, traffic):
                 rows.append({"pit_loss_label": label, "pit_loss": pit_loss, "wear_offset": offset, **row})
     return rows
 
@@ -192,6 +226,7 @@ def fit_inputs(rows: list[dict], train_years: list[int] = TRAIN_YEARS) -> dict:
         "model": fit_final_model on train_years
         "pit_loss": analysis.pit_loss_by_circuit dict (median, q25, q75 per circuit)
         "lap_one_loss": dict circuit -> median lap-1 loss in seconds
+        "traffic_table": traffic.fit_traffic_penalty on the training years
         "max_ages": dict (circuit, compound) -> oldest clean tyre age
         "held_out_wear_errors": held_out_wear_errors over train_years
         "wear_range": 75th percentile of those errors (s per lap of age),
@@ -214,6 +249,7 @@ def fit_inputs(rows: list[dict], train_years: list[int] = TRAIN_YEARS) -> dict:
         "pit_loss": pit_loss_by_circuit(stop_losses(train, model), train_years),
         "lap_one_loss": {circuit: values["median"] for circuit, values in lap_one.items()},
         "max_ages": observed_max_ages(max_clean_tyre_age(train), train_years),
+        "traffic_table": fit_traffic_penalty(train, model),
         "held_out_wear_errors": errors,
         "wear_range": float(pd.Series(errors).quantile(0.75)),
     }
@@ -274,21 +310,29 @@ def compare_race(rows: list[dict], inputs: dict, circuit: str, year: int) -> dic
             **_compare_all(strategies, settings, circuit, inputs, BASELINE)}
 
 
-def _compare_all(strategies: dict, settings: dict, circuit: str, inputs: dict, baseline: str) -> dict:
+def _compare_all(strategies: dict, settings: dict, circuit: str, inputs: dict, baseline: str,
+                 traffic: dict | None = None) -> dict:
     """Ranking at the median pit loss, the sensitivity grid rows, and simulated lap times
-    (pit loss not included) of every strategy the simulator accepts."""
+    (pit loss not included, traffic penalty included if `traffic`) of every strategy the
+    simulator accepts. `traffic` as in compare_strategies."""
     shared = (settings["race_distance"], circuit, inputs["model"], settings["reference_lap"])
-    ranking = compare_strategies(strategies, *shared, settings["pit_losses"]["median"],
-                                 settings["lap_one_loss"], inputs["max_ages"], baseline)
+    pit_loss, lap_one = settings["pit_losses"]["median"], settings["lap_one_loss"]
+    ranking = compare_strategies(strategies, *shared, pit_loss, lap_one, inputs["max_ages"], baseline,
+                                 traffic=traffic)
     wear = inputs["wear_range"]
-    rows_sensitivity = sensitivity(strategies, *shared, settings["pit_losses"], settings["lap_one_loss"],
-                                   inputs["max_ages"], baseline, [-wear, 0.0, wear])
+    rows_sensitivity = sensitivity(strategies, *shared, settings["pit_losses"], lap_one,
+                                   inputs["max_ages"], baseline, [-wear, 0.0, wear], traffic)
+    anchor_cum = None
+    if traffic is not None:
+        anchor_cum = _run_strategy(strategies[traffic["anchor"]], *shared, pit_loss, lap_one, inputs["max_ages"],
+                                   0.0, traffic, None)["cum"]
     frames = []
     for row in ranking:
         if row["error"] is None:
-            sim = simulate(strategies[row["strategy"]], *shared, settings["pit_losses"]["median"],
-                           settings["lap_one_loss"], inputs["max_ages"])
-            frames.append(sim["laps"][["lap_number", "lap_time"]].assign(strategy=row["strategy"]))
+            is_anchor = traffic is not None and row["strategy"] == traffic["anchor"]
+            run = _run_strategy(strategies[row["strategy"]], *shared, pit_loss, lap_one, inputs["max_ages"], 0.0,
+                                traffic, None if is_anchor else anchor_cum)
+            frames.append(run["laps"].assign(strategy=row["strategy"]))
     return {"ranking": ranking, "sensitivity": rows_sensitivity, "laps": pd.concat(frames, ignore_index=True)}
 
 
@@ -407,7 +451,7 @@ def race_session_key(rows: list[dict], circuit: str, year: int) -> int:
 
 
 def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driver: int,
-                   min_clean_laps: int = 5, custom: dict | None = None) -> dict:
+                   min_clean_laps: int = 5, custom: dict | None = None, traffic: bool = False) -> dict:
     '''
     One driver's real strategy against the candidate strategies (SPEC section 1).
 
@@ -415,6 +459,11 @@ def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driv
     driver: driver number, one of driver_choices
     min_clean_laps: first-half clean laps needed to estimate the car's pace
     custom: optional custom_strategy result, added as "custom" to the strategies
+    traffic: if True, every strategy runs against the other cars' real lap start times
+        (inputs["traffic_table"], traffic.traffic_timeline). The real strategy sits where
+        it really was; an alternative moves through the field by how much faster or slower
+        it is than the real strategy. The other cars don't react. The car's pace also has the
+        traffic of its first half taken out.
 
     returns: dict with
         "settings": race_settings, with "reference_lap" this car's pace: the median over
@@ -444,8 +493,17 @@ def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driv
     distance = settings["race_distance"]
     laps = sorted((r for r in race if r["driver_number"] == driver and r["lap_number"] <= distance),
                   key=lambda r: r["lap_number"])
-    settings["reference_lap"] = first_half_pace(laps, inputs["model"], distance, min_clean_laps)
     actual = actual_strategy(laps)
+    traffic_inputs, penalties = None, None
+    if traffic:
+        if "traffic_table" not in inputs:
+            raise ValueError("inputs has no traffic_table; build it with fit_inputs")
+        table = inputs["traffic_table"]
+        field = start_times(race)
+        penalties = real_lap_penalties(driver, real_gaps(race), table, actual["pit_laps"], distance)
+        traffic_inputs = {"table": table, "real_start": field.get(driver, {}), "anchor": "actual",
+                          "field": {d: times for d, times in field.items() if d != driver}}
+    settings["reference_lap"] = first_half_pace(laps, inputs["model"], distance, min_clean_laps, penalties)
     # Everyone starts the race on the set they started on; only later sets are a free choice.
     strategies = {"actual": actual}
     for name, candidate in candidate_strategies(distance).items():
@@ -453,7 +511,7 @@ def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driv
     if custom is not None:
         validate_strategy(custom, distance)
         strategies["custom"] = _with_start_ages(custom, actual)
-    result = _compare_all(strategies, settings, circuit, inputs, "actual")
+    result = _compare_all(strategies, settings, circuit, inputs, "actual", traffic_inputs)
     actual_time = sum(r["lap_duration"] for r in laps)
     simulated = next(r["total"] for r in result["ranking"] if r["strategy"] == "actual")
     return {"settings": settings, "actual_strategy": actual, "actual_time": actual_time,

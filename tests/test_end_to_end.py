@@ -65,3 +65,17 @@ def test_invalid_input_is_refused_not_simulated(data):
         compare_driver(rows, inputs, "Monza", 2024, 9999)
     with pytest.raises(ValueError, match="two different dry compounds"):
         compare_driver(rows, inputs, "Monza", 2024, car, custom={"compounds": ["HARD", "HARD"], "pit_laps": [20]})
+
+
+def test_traffic_changes_the_numbers_but_not_the_shape(data):
+    rows, inputs = data
+    car = driver_choices(rows, "Monza", 2024, inputs["model"])[0]
+
+    off = compare_driver(rows, inputs, "Monza", 2024, car)
+    on = compare_driver(rows, inputs, "Monza", 2024, car, traffic=True)
+
+    assert {r["strategy"] for r in on["ranking"]} == {r["strategy"] for r in off["ranking"]}
+    assert math.isfinite(on["simulated_actual"]) and on["simulated_actual"] != off["simulated_actual"]
+    assert abs(on["model_error"]) < 120
+    assert len(on["sensitivity"]) == len(off["sensitivity"])
+    assert inputs["traffic_table"]["mean"][0] > inputs["traffic_table"]["mean"][-1]    # close behind costs time

@@ -765,3 +765,30 @@ One entry per real decision. Format:
   whole-race median as default (`pace="first_half"` is the option).
 - **What would make us reconsider** — The +2.6 s bias getting larger with traffic or
   safety-car replay, or a split point other than half distance doing clearly better.
+
+## 2026-11-18 — Traffic: a lap-time penalty by gap to the car ahead, on by default in the app
+
+- **Decision** — `traffic.py` estimates the lap-time loss by gap to the car ahead (bins 0.5, 1,
+  1.5, 2.5, 4 s) from clean-lap model residuals with each driver's race average removed, then
+  replays the real field: a car's gap is the time since another car started the same lap number,
+  derived from `date_start`. The real strategy sits where it really was; an alternative's position
+  moves by how much faster or slower it is than the real strategy ("anchored"), so the model's
+  shared error cancels. Other cars never react. The app includes it by default (toggle off).
+- **Requirement** — The model preferred evenly split stints for most cars because it had no reason
+  to pit early or late; traffic is one such reason (v2 scope, DECISIONS above).
+- **Options** — Use the OpenF1 `/intervals` endpoint (only 1 driver of 1 race cached; would need
+  ~15 races x 20 drivers of requests); derive gaps from lap start times (chosen); penalty per
+  circuit (about 5 races x 2 years of data per bin, too thin); one pooled penalty table (chosen).
+- **Choice and reason** — Gate: close-behind laps lose time, with a smooth dose-response in both years
+  (< 0.5 s: +0.5 s, 0.5-1 s: +0.18, 1-1.5 s: +0.05, free air: -0.11, relative to an average lap;
+  positive for 9 of 10 race-years). Pair check, 2023/24 cross-year (tuning set): MAE 11.21 -> 10.50 s,
+  hit rate 70% -> 71%; whole-race backtest: MAE 10.41 -> 9.60 s with first-half pace, bias +2.58 ->
+  +0.36 s. 2025, read once: MAE 10.86 -> 10.66 s, hit rate 76% -> 82%. Whole-race pace with traffic is
+  worse (12.06 s) because that pace already contains the traffic, so traffic only goes with first-half pace.
+- **Known limit** — The test only simulates real strategies. Whether the penalty describes an
+  alternative strategy (a car rejoining behind different cars) cannot be checked: there is no real
+  data for it. The app says so. With traffic the model agrees with the real strategy for 18 of 124
+  cars (2 before), which is the effect traffic was meant to have.
+- **What would make us reconsider** — A circuit-level check showing the penalty is wrong at one
+  track, a penalty that changes much between years once more races are added, or an overtaking
+  rule becoming estimable.

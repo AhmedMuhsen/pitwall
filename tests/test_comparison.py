@@ -379,3 +379,43 @@ def test_load_driver_names_and_session_key(tmp_path):
     assert race_session_key(DRIVER_RACE, "X", 2024) == 1
     with pytest.raises(ValueError, match="No race"):
         race_session_key(DRIVER_RACE, "Y", 2024)
+
+
+TRAFFIC_TABLE = {"edges": [0.5, 1.0], "mean": [0.5, 0.2, -0.1], "n": [1, 1, 1]}
+# Our car really started lap n at 100 * (n - 1); another car started laps 2, 3, 4 at 99.8, 199.0, 299.7.
+TRAFFIC = {"table": TRAFFIC_TABLE, "anchor": "one_stop", "real_start": {1: 0.0, 2: 100.0, 3: 200.0, 4: 300.0},
+           "field": {7: {1: -1.0, 2: 99.8, 3: 199.0, 4: 299.7}}}
+
+
+def test_compare_strategies_with_traffic_hand_example():
+    result = compare_strategies(STRATEGIES, 4, "X", StubModel(), 100.0, 20.0, 0.0, MAX_AGES, "one_stop",
+                                traffic=TRAFFIC)
+
+    totals = {r["strategy"]: r["total"] for r in result}
+    # one_stop (the real strategy) free laps 100.25, 100.6, 100.75, 101.1 = 402.7. It pits on lap 2, so only
+    # lap 4 can carry a penalty: it starts at the real 300.0, 0.3 s behind the other car, +0.5. Total 402.7 + 0.5 + 20.
+    assert totals["one_stop"] == pytest.approx(423.2)
+    # two_stop: free laps 100.25, 100.5, 100.75, 101.1 = 402.6, stops after laps 1 and 2. Only lap 4 is eligible.
+    # Its elapsed time before lap 4 is 341.5 against one_stop's 321.6, so it starts lap 4 at 300 + 19.9 = 319.9,
+    # 20.2 s behind the other car: free air, -0.1. Total 402.6 - 0.1 + 40.
+    assert totals["two_stop"] == pytest.approx(442.5)
+    assert [r["gap"] for r in result] == pytest.approx([0.0, 19.3])
+
+
+def test_compare_strategies_with_traffic_rejects_unknown_anchor():
+    with pytest.raises(ValueError, match="Traffic anchor"):
+        compare_strategies(STRATEGIES, 4, "X", StubModel(), 100.0, 20.0, 0.0, MAX_AGES, "one_stop",
+                           traffic={**TRAFFIC, "anchor": "three_stop"})
+
+
+def test_sensitivity_with_traffic_keeps_the_scenario_grid():
+    rows = sensitivity(STRATEGIES, 4, "X", StubModel(), 100.0, {"a": 20.0, "b": 25.0}, 0.0, MAX_AGES,
+                       "one_stop", [0.0, 0.05], traffic=TRAFFIC)
+
+    assert len(rows) == 8
+    assert all(r["total"] is not None for r in rows)
+
+
+def test_compare_driver_with_traffic_needs_a_traffic_table():
+    with pytest.raises(ValueError, match="traffic_table"):
+        compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 1, min_clean_laps=2, traffic=True)

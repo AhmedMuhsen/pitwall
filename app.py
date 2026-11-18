@@ -111,8 +111,14 @@ with st.sidebar.expander("Try your own strategy"):
         except ValueError as e:
             st.error(f"Your strategy can't be used: {e}")
 
+use_traffic = st.sidebar.toggle(
+    "Include traffic", value=True,
+    help="Every strategy runs against the other cars' real lap times. A lap that starts close behind another car "
+         "costs time (about +0.5 s within half a second, falling to nothing beyond about 2 s). The other cars "
+         "do not react to your strategy.")
+
 try:
-    result = compare_driver(rows, inputs, circuit, year, driver, custom=custom)
+    result = compare_driver(rows, inputs, circuit, year, driver, custom=custom, traffic=use_traffic)
 except ValueError as e:
     st.error(f"Can't compare {who} at {circuit} {year}: {e}")
     st.stop()
@@ -151,7 +157,7 @@ else:
         "leans": (f"The model leans towards a different strategy, by about {-r['gap']:.0f} s.",
                   "Between 3 and 10 s it picked the faster of two real strategies about 2 times in 3 in tests."),
         "prefers": (f"The model prefers a different strategy, by about {-r['gap']:.0f} s.",
-                    "Above 10 s it picked the faster of two real strategies about 9 times in 10 in tests."),
+                    "Above 10 s it picked the faster of two real strategies more than 4 times in 5 in tests."),
     }[answer["kind"]]
     robust = ("It stays faster across every pit-loss and tyre-wear setting tested."
               if answer["robust"] else
@@ -261,8 +267,12 @@ with st.expander("Assumptions and limitations"):
   Lap times are relative to each driver's median clean lap in the race.
 - **No driver-specific tyre wear.** The driver only sets the pace level and the real strategy. The
   alternatives rank the same way for every driver in a race.
-- **No safety cars, no traffic, no overtaking.** Every car runs in clean air for the whole race, and
-  finishing positions are not estimated.
+- **Safety cars are not modelled**, so only races without one are offered.
+- **Traffic is a simple replay.** With "Include traffic" on, every strategy runs against the other cars' real
+  lap times and a lap starting close behind another car costs time (estimated from {TRAIN_YEARS[0]}–{TRAIN_YEARS[-1]}
+  laps). The other cars never react, there is no overtaking logic and finishing positions are not estimated.
+  The penalty was checked on real strategies (it improved the model's error); how well it describes
+  *alternative* strategies could not be checked, because there is no real data for them.
 - **Alternatives use new tyre sets.** Real strategies keep their used sets.
 - **Track evolution** (the track getting faster) is folded into the race-lap (fuel) term.
 - **Pit loss** is per circuit: pit-lane time minus the time to cover the same stretch at racing speed,

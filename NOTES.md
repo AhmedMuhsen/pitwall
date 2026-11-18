@@ -434,3 +434,16 @@ replayed real safety cars (DECISIONS 2026-11-18).
 
 Still unclear: EC2 vs container for the AWS deploy (your decision, see docs/DEPLOY.md), and
 whether to commit data/processed/ (two files, about 330 KB) so a fresh clone can run the app.
+
+## 2026-11-18 Session 32 (v2 part 1: traffic)
+
+Done: traffic.py (gaps from lap start times, penalty by gap to the car ahead, anchored replay of the
+real field). Gate passed (close behind costs time in both years). 2023/24 cross-year pair check MAE
+11.21 -> 10.50 s; whole-race backtest 10.41 -> 9.60 s (first-half pace); 2025 read once: pair MAE
+10.86 -> 10.66 s, hit rate 76% -> 82%. App has "Include traffic" (default on); the model now agrees
+with the real strategy for 18 of 124 cars (2 before). `compare_strategies`/`sensitivity`/
+`compare_driver` take the replayed field; `scripts/evaluate.py` prints traffic on/off.
+
+Next: replayed real safety cars (exact neutralised laps, SC lap times from the field, cheaper stops).
+
+Still unclear: Traffic for alternative strategies can't be validated (no real data for them).

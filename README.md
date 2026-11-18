@@ -120,8 +120,9 @@ treated as a 2025 effect and reported, not modelled
 ([DECISIONS](DECISIONS.md), 2026-11-18).
 
 **Whole-race backtest**: each driver's real strategy run through the simulator, safety-car-free
-2023/24 races, each scored by a model fitted on the other year: mean absolute error **10.4 s** per
-race total (76 driver-races, about 0.18 s per lap).
+2023/24 races, each scored by a model fitted on the other year: mean absolute error **9.6 s** per
+race total with traffic (76 driver-races, about 0.16 s per lap); 10.4 s without traffic, 11.8 s when
+the car's pace is taken from the whole race instead of its first half.
 
 **Do strategy gaps come out right?** The app compares strategies, so the check that matters is
 pairs of cars in the same race that ran different strategies (320 pairs 2023/24 cross-year, 244
@@ -129,18 +130,27 @@ pairs in 2025). Each car's pace is taken from its first half and only the second
 
 | | Model gap error | "No strategy effect" error | Picks the faster car (real gap > 5 s) |
 |---|---:|---:|---:|
-| 2023/24 cross-year | 11.2 s | 12.8 s | 70% |
-| 2025 | 10.9 s | 15.7 s | 76% |
+| 2023/24 cross-year, traffic off | 11.2 s | 12.8 s | 70% |
+| 2023/24 cross-year, **traffic on** | **10.5 s** | 12.5 s | 71% |
+| 2025, traffic off | 10.9 s | 15.7 s | 76% |
+| 2025, **traffic on** | **10.7 s** | 15.5 s | 82% |
 
-By size of the predicted gap, the predicted faster car really was faster about 55% of the time under
-3 s, about 65% between 3 and 10 s, and about 90% above 10 s. That is why the verdict says "too close
-for the model to call" under 3 s.
+With traffic on, the predicted faster car really was faster about 55% of the time when the predicted
+gap was under 3 s, about 2 times in 3 between 3 and 10 s, and 84% (2023/24) to 94% (2025) above 10 s.
+That is why the verdict says "too close for the model to call" under 3 s.
+
+**Traffic** is a lap-time penalty that depends on the gap to the car ahead, estimated from lap start
+times: a lap starting within half a second of another car is about +0.5 s slower than an average lap,
+falling to nothing beyond about 2 s ([DECISIONS](DECISIONS.md), 2026-11-18). It was checked on real
+strategies only. How well it describes an alternative strategy cannot be checked (there is no real
+data for one), and the other cars never react.
 
 ## Reading the results
 
 - **A gap is not an instruction.** The model only knows tyre age and fuel, so it tends to favour evenly
   split stints. Real teams pit for undercuts, traffic, tyre allocation and sudden tyre drop-off, none
   of which it sees. A "the model prefers X" verdict means exactly that.
+- **Traffic is on by default** and can be switched off in the sidebar to see what it changes.
 - **Gaps are more reliable than totals.** Much of the model's error is shared by every strategy in a
   race and cancels in a gap.
 - **The range bars** show how the gap moves with pit loss (25th to 75th percentile at that circuit)
@@ -151,8 +161,9 @@ for the model to call" under 3 s.
 ## Limitations
 
 - **Safety cars**: not modelled. Races with one are excluded from the comparison.
-- **Traffic and overtaking**: not modelled. Every car runs in clean air, and the dataset's
-  traffic-affected laps are not removed from training.
+- **Traffic** is a simple replay of the real field with a penalty close behind another car (above).
+  There is no overtaking logic, the other cars never react, and the training laps that were run in
+  traffic are not removed (the penalty is relative to an average lap).
 - **Track evolution** is folded into the race-fraction term; it cannot be separated from fuel burn.
 - **Fuel and tyre wear** within one race are only roughly separable.
 - **Old tyres in 2025** lost less time than the model predicts (above).

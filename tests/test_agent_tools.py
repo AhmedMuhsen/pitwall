@@ -112,3 +112,11 @@ def test_run_tool_never_raises(ctx):
     assert run_tool(ctx, "list_cars", {})["error"] == "bad_input"
     assert run_tool(ctx, "compare_strategy", {"race": "Monza 2024", "car": "LEC"})["race"] == "Monza 2024"   # missing lists = standard
     assert run_tool(ctx, "list_races", {})["years"] == [2023, 2024, 2025]
+
+
+def test_lists_state_their_own_counts(ctx):
+    races = list_races(ctx)
+    assert races["offered_count"] == {year: len(circuits) for year, circuits in races["offered"].items()}
+
+    cars = list_cars(ctx, "Miami 2024")
+    assert cars["car_count"] == len(cars["cars"]) and cars["car_count"] > 0

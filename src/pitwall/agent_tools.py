@@ -174,7 +174,8 @@ def list_races(ctx: dict) -> dict:
     '''
     The races the simulator can compare, and why the others can't be.
 
-    returns: {"offered": {year: [circuit, ...]}, "not_available": {"Monte Carlo 2023": reason, ...}, "years": [...]}
+    returns: {"offered": {year: [circuit, ...]}, "offered_count": {year: n}, "not_available": {"Monte Carlo 2023": reason, ...},
+    "years": [...]}; the counts are there so the model never has to count a list itself
     '''
     offered = {}
     for year, circuit in sorted(ctx["offered"]):
@@ -185,7 +186,8 @@ def list_races(ctx: dict) -> dict:
         if (year, circuit) not in ctx["offered"]:
             problem = _race_problem(ctx, year, circuit)
             not_available[label] = problem["message"].split(" isn't ", 1)[-1] if problem else ""
-    return {"years": list(YEARS), "offered": offered, "not_available": not_available,
+    return {"years": list(YEARS), "offered": offered, "offered_count": {y: len(v) for y, v in offered.items()},
+            "not_available": not_available,
             "note": "Data comes from OpenF1, which has no data before 2023."}
 
 
@@ -196,7 +198,10 @@ def list_cars(ctx: dict, race: str) -> dict:
         return resolved
     year, circuit = resolved
     problem = _race_problem(ctx, year, circuit)
-    return problem or {"race": f"{circuit} {year}", "cars": _cars(ctx, year, circuit)}
+    if problem:
+        return problem
+    cars = _cars(ctx, year, circuit)
+    return {"race": f"{circuit} {year}", "car_count": len(cars), "cars": cars}
 
 
 def _one_decimal(value: float) -> float:
@@ -244,7 +249,7 @@ def compare_strategy(ctx: dict, race: str, car: str, compounds: list, pit_laps: 
     alternatives = []
     for entry in sorted((g for g in ranges if g["confidence"] != "baseline"), key=lambda g: g["gap"]):
         item = {"strategy": names[entry["strategy"]], "gap_s": _one_decimal(entry["gap"]),
-                "range_s": [_one_decimal(entry["min_gap"]), _one_decimal(entry["max_gap"])]}
+                "range_over_pit_loss_assumptions_s": [_one_decimal(entry["min_gap"]), _one_decimal(entry["max_gap"])]}
         if entry["p_faster"] is not None:
             item["faster_in_refits"] = f"{round(entry['p_faster'] * entry['refits'])} of {entry['refits']}"
         if entry["strategy"] == "custom":

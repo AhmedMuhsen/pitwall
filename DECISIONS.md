@@ -999,16 +999,19 @@ One entry per real decision. Format:
 
 - **Decision** — `agent.py` runs a manual tool-use loop (not the SDK's tool runner) over three tools (`list_races`, `list_cars`,
   `compare_strategy`) defined in `agent_tools.py` with `strict: true` schemas in which every parameter is required (empty lists mean
-  "standard comparison"). Default model `claude-sonnet-5-5`, `effort: medium`. It runs only from the command line (`scripts/ask.py`,
-  `scripts/run_agent_eval.py`) with the user's own API key. The `anthropic` package is an optional extra (`agent`), so the Streamlit
-  app and the Docker image don't install it. Evaluated on 40 questions with deterministic grading (`agent_eval.py`).
+  "standard comparison"). Default model Sonnet 5.5, reached through OpenRouter (`anthropic/claude-sonnet-5.5`). It runs only from the command line (`scripts/ask.py`,
+  `scripts/run_agent_eval.py`) with the user's own API key. `llm.py` holds one client per provider behind one interface: OpenRouter (standard library only, no new dependency) and the Anthropic SDK
+  (optional extra `agent`). The app and the Docker image install neither. Evaluated on 40 questions with deterministic grading (`agent_eval.py`).
 - **Requirement** — CLAUDE.md Phase 2: an agent that answers what-if questions by calling the simulator as a tool, with an eval set.
 - **Options** — Where it runs: command line and eval only (chosen), a bring-your-own-key box in the app, or hosted with the owner's key
   (costs money per question and invites abuse; rejected, the project's budget is $0). Model: Sonnet 5.5 (chosen), Opus 5.5, Haiku 5.5.
-  Loop: SDK tool runner (beta) or manual (chosen: every call and result must be recorded for grading). Dependency: the SDK as an optional
-  extra (chosen) or hand-written HTTP.
-- **Design choices that follow from the API** — No forced `tool_choice` (Sonnet 5.5 returns a 400); tool results for one turn go back in a
-  single user message; thinking blocks are passed back unchanged; refusals return an empty answer with `stop_reason: "refusal"`.
+  Loop: SDK tool runner (beta) or manual (chosen: every call and result must be recorded for grading). Provider (changed the same day, at the owner's request): OpenRouter instead of Anthropic's own API, because the
+  owner has $1.49 of OpenRouter credit and can add $5; one key also allows comparing models cheaply. Cost: an adapter between the two
+  message formats (tool definitions, tool results as separate messages, `arguments` as a JSON string), tested without network.
+- **Design choices that follow from the APIs** — No forced `tool_choice` (Sonnet 5.5 returns a 400 on Anthropic's API); tool schemas go to
+  OpenRouter without `strict` (not documented for tools there), so a malformed call is caught by the tool's own input check and returned
+  as `bad_input`; the `effort` setting is only sent on the Anthropic provider; `reasoning_details` are echoed back if a model sends them
+  (the docs pages I read didn't cover this, so it is a guess, untested live); HTTP 429 and 5xx are retried with backoff, 402 stops the run.
   Server-side refusal fallbacks are NOT enabled: they need a beta parameter I could not test without a key, and refusals are unlikely in this
   domain.
 - **Why the tools return explanations** — Unknown or unavailable races return a reason from `race_selection.json` (red flag, wet tyres, no
@@ -1020,7 +1023,13 @@ One entry per real decision. Format:
   where it must, asks a question where it must. Controls: a scripted perfect agent scores 40/40 and a careless one at most 2/40.
 - **Known limits** — The grounding check is lexical: it cannot tell that a correct number was misread (a negative gap called slower), or that
   a correct number was attached to the wrong strategy. The 40 questions were written by the same author as the grader, so they probe known
-  failure modes, not unknown ones. **No live run has been done yet** (no API key was available to the assistant); `docs/AGENT_EVAL.md` is
-  produced by the first one.
+  failure modes, not unknown ones.
+- **Live results (2026-11-18, via OpenRouter, billed cost)** — Run 1: Haiku 5.5 38/40 ($0.026), Sonnet 5.5 38/40 ($0.498). Every failure
+  was outside the 20 strategy questions. Three were correct counts ("18 races", "19 cars") the tools never stated; fixed in the tools
+  (`offered_count`, `car_count`), not in the grader, because rule 1 forbids the model computing numbers. Run 2: Haiku 38/40 ($0.029),
+  Sonnet 39/40 ($0.507). Remaining failures: an illustrative example number in a clarifying question (Haiku "car 16", Sonnet "lap 15"; grader
+  strictness, left as is) and Haiku's decline-08, which repeated: it asks for tyres before checking that Monaco 2024 is available (a
+  real miss, left as a finding rather than tuned away). Run 2 is not a clean test (a fix followed run 1) and runs are not deterministic
+  (Sonnet's ask-04 passed in run 1 and failed in run 2). Haiku equals Sonnet here at about 6% of the cost; Opus 5.5 was not tried.
 - **What would make us reconsider** — A live pass rate that depends on the model more than on the tools (then compare Haiku 5.5 and Opus
   5.5), or failures concentrated in one group (then change the tool descriptions, not the model).

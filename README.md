@@ -87,7 +87,7 @@ flowchart LR
 | `traffic.py` | Lap-time penalty by gap to the car ahead; the real field replayed from lap start times |
 | `neutralisation.py` | Safety-car and virtual-safety-car windows; the field's real lap times on those laps; the cost of a stop under a real safety car |
 | `backtest.py`, `evaluation.py` | Real strategies run through the simulator; leave-one-stint-out; metrics and train/test splits |
-| `agent.py`, `agent_tools.py`, `agent_eval.py` | The what-if agent: its tool-use loop, its three tools, and the deterministic grading of its answers |
+| `agent.py`, `agent_tools.py`, `agent_eval.py`, `llm.py` | The what-if agent: its tool-use loop, its three tools, the deterministic grading of its answers, and the provider clients (OpenRouter, Anthropic) |
 | `comparison.py` | The candidate strategies, rankings, sensitivity, refits of the model, verdict: everything the app displays |
 
 The app only displays; every number comes from `comparison.py`.
@@ -239,13 +239,14 @@ many refits agree, the calibrated intervals, caveats). Problems come back as rea
 a red flag stopped the race"), not as exceptions.
 
 ```bash
-uv sync --extra agent                    # the anthropic SDK is an optional extra: the app and the Docker image don't install it
-export ANTHROPIC_API_KEY=...             # or: ant auth login
+export OPENROUTER_API_KEY=sk-or-...      # one key for many models; no extra install, standard library only
 uv run python scripts/ask.py "What if Leclerc had pitted on lap 20 at Monza 2024?" -v
 ```
 
-It uses Claude Sonnet 5.5 by default (`--model` to change) and runs only from the command line: nothing public, so no hosting cost
-and no one else spends your API credit. The system prompt's rules are what the evaluation checks: every number must come from a tool
+It uses Claude Sonnet 5.5 through OpenRouter by default (`--model` to change; `--provider anthropic` talks to Anthropic directly
+and needs `uv sync --extra agent`). The loop in `agent.py` doesn't know which provider answers: `llm.py` has one small client per
+provider behind the same interface. It runs only from the command line: nothing public, so no hosting cost and no one else spends
+your credit. The system prompt's rules are what the evaluation checks: every number must come from a tool
 result, never "optimal", ask when the race or car is missing, and decline what the simulator can't do (finishing positions,
 comparing drivers, 2022 or 2026, wet or red-flag races, hypothetical safety cars).
 
@@ -254,8 +255,20 @@ comparing drivers, 2022 or 2026, wet or red-flag races, hypothetical safety cars
 as judge): the right tool with the right arguments (race and car compared after resolution), every number in the answer present in
 a tool result or the question (rounding allowed), no optimality claims (negation-aware), a decline or a question where one is due.
 The harness itself is checked with controls: a scripted agent that does exactly what each case expects scores 40/40, and a careless
-one that never calls a tool and invents numbers scores at most 2/40 (`tests/test_agent_controls.py`). Live results go in
-[`docs/AGENT_EVAL.md`](docs/AGENT_EVAL.md) after `uv run python scripts/run_agent_eval.py` (it spends API credit and reports the measured cost).
+one that never calls a tool and invents numbers scores at most 2/40 (`tests/test_agent_controls.py`). Live results, run through OpenRouter on 2026-11-18 (full reports: [`docs/AGENT_EVAL_sonnet.md`](docs/AGENT_EVAL_sonnet.md),
+[`docs/AGENT_EVAL_haiku.md`](docs/AGENT_EVAL_haiku.md); the first runs, before one tool fix, are the `_run1` files):
+
+| Model | Passed (run 1, then run 2) | Cost of 40 questions |
+|---|---|---:|
+| Claude Haiku 5.5 | 38 / 40, 38 / 40 | $0.03 |
+| Claude Sonnet 5.5 | 38 / 40, 39 / 40 | $0.50 |
+
+Both models got all 20 strategy questions (named and open) right on tool, arguments and numbers. The failures were not wrong
+strategy numbers: three were correct list counts the tool didn't state (fixed by returning the counts, which is why run 2 differs),
+two were an illustrative example number in a clarifying question ("for example, car 16"), and one is a real model miss that repeated in both Haiku runs:
+asked to simulate Monaco 2024, Haiku asks which tyres to use instead of first checking the race is available. 40 questions
+written by the same author as the grader cannot separate 38 from 39, and the second run followed a fix made after reading the first,
+so it is not a clean held-out test. Haiku matched Sonnet here at about 6% of the cost.
 What the grader can't catch: a number that is in a tool result but used wrongly (for example reading a negative gap as slower).
 
 ## Reading the results

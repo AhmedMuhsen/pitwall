@@ -1,13 +1,14 @@
 """A what-if agent: a language model that answers questions about pit strategy by calling the simulator's tools.
 
 The model never computes anything itself. It decides which tool to call, with what arguments, and then explains the result in
-plain words; agent_eval.py checks that it does exactly that. Needs the optional `anthropic` package (uv sync --extra agent).
+plain words; agent_eval.py checks that it does exactly that. Which provider answers is up to the client (llm.py).
 """
 import json
 
 from pitwall.agent_tools import TOOL_DEFINITIONS, run_tool
 
-DEFAULT_MODEL = "claude-sonnet-5-5"
+DEFAULT_MODELS = {"openrouter": "anthropic/claude-sonnet-5.5", "anthropic": "claude-sonnet-5-5"}
+DEFAULT_MODEL = DEFAULT_MODELS["openrouter"]
 
 SYSTEM_PROMPT = """You answer questions about Formula 1 pit strategy. You have a lap-time simulator built from 2023-2025 race \
 data, and you can reach it only through your tools.
@@ -23,7 +24,7 @@ compare_strategy.
 around it and don't invent an answer. The simulator cannot answer questions about finishing positions, comparing drivers, the \
 2022 or 2026 seasons, wet races, red-flagged races, or what would happen if a safety car had come out: say so.
 5. Never call a strategy optimal, best or guaranteed. Report what the model prefers and how sure it is (the verdict, how many \
-refits agree, the interval). A negative gap means faster than the real strategy.
+refits agree, the interval). A negative gap means faster than the real strategy. "range_over_pit_loss_assumptions_s" is how the gap moves if the pit-stop cost is assumed lower or higher; "faster_in_refits" is a separate check (refitting the model on subsets of races). Don't present them as one range.
 6. When you give a comparison, include one sentence on how far to trust it, using the tool's verdict and caveats.
 Keep answers under about 150 words, in plain language."""
 
@@ -35,43 +36,40 @@ def run_agent(question: str, ctx: dict, client, model: str = DEFAULT_MODEL, max_
 
     question: the user's question
     ctx: agent_tools.load_context result
-    client: an anthropic.Anthropic client (anything with .messages.create works, which is how the tests run it)
-    model: model id; effort: output_config effort level, or None to leave it at the model's default
+    client: an llm.OpenRouterClient or llm.AnthropicClient (anything with a compatible .complete(); the tests pass a script)
+    model: model id in that provider's naming; effort: reasoning effort where the provider supports it, or None
     max_turns: most model calls before giving up; max_tokens: output limit per call
     tool_runner: how a tool call is executed (agent_tools.run_tool); replaced in tests
 
-    returns: dict with "answer" (text), "tool_calls" (each {"name", "input", "result"}), "stop_reason" (the model's last
-    stop reason, "max_turns" if it never finished, "refusal" if it declined), "turns" and "usage" (summed input and output
-    tokens). An unfinished or refused run has an empty "answer"; a run cut off by max_tokens keeps the partial text.
+    returns: dict with "answer" (text), "tool_calls" (each {"name", "input", "result"}), "stop_reason" (the last stop reason:
+    "end_turn", "max_tokens", "refusal", "error", or "max_turns" if it never finished), "turns" and "usage" (summed
+    "input_tokens" and "output_tokens", and "cost_usd" when the provider reports it, else None). An unfinished, refused or failed
+    run has an empty "answer"; a run cut off by max_tokens keeps the partial text.
     '''
     messages = [{"role": "user", "content": question}]
-    tool_calls, usage = [], {"input_tokens": 0, "output_tokens": 0}
+    tool_calls = []
+    usage = {"input_tokens": 0, "output_tokens": 0, "cost_usd": None}
     for turn in range(1, max_turns + 1):
-        request = {"model": model, "max_tokens": max_tokens, "system": SYSTEM_PROMPT, "tools": TOOL_DEFINITIONS,
-                   "messages": messages}
-        if effort:
-            request["output_config"] = {"effort": effort}
-        response = client.messages.create(**request)
-        usage["input_tokens"] += response.usage.input_tokens
-        usage["output_tokens"] += response.usage.output_tokens
+        reply = client.complete(model=model, system=SYSTEM_PROMPT, messages=messages, tools=TOOL_DEFINITIONS,
+                                max_tokens=max_tokens, effort=effort)
+        usage["input_tokens"] += reply.usage["input_tokens"]
+        usage["output_tokens"] += reply.usage["output_tokens"]
+        if reply.usage.get("cost_usd") is not None:
+            usage["cost_usd"] = (usage["cost_usd"] or 0.0) + reply.usage["cost_usd"]
 
-        if response.stop_reason == "tool_use":
-            messages.append({"role": "assistant", "content": response.content})
+        if reply.stop == "tool_use":
+            messages.append({"role": "assistant", "text": reply.text, "tool_calls": reply.tool_calls, "raw": reply.raw})
             results = []
-            for block in response.content:
-                if block.type != "tool_use":
-                    continue
-                output = tool_runner(ctx, block.name, block.input)
-                tool_calls.append({"name": block.name, "input": dict(block.input), "result": output})
-                results.append({"type": "tool_result", "tool_use_id": block.id,
-                                "content": json.dumps(output, ensure_ascii=False),
+            for call in reply.tool_calls:
+                output = tool_runner(ctx, call.name, call.input)
+                tool_calls.append({"name": call.name, "input": dict(call.input), "result": output})
+                results.append({"id": call.id, "content": json.dumps(output, ensure_ascii=False),
                                 "is_error": output.get("error") in ("unknown_tool", "bad_input")})
-            messages.append({"role": "user", "content": results})      # every result of one turn in a single message
+            messages.append({"role": "tool", "results": results})      # every result of one turn goes back together
             continue
-        if response.stop_reason == "pause_turn":
-            messages.append({"role": "assistant", "content": response.content})
+        if reply.stop == "pause_turn":
+            messages.append({"role": "assistant", "text": reply.text, "tool_calls": [], "raw": reply.raw})
             continue
-        text = "".join(block.text for block in response.content if block.type == "text")
-        return {"answer": "" if response.stop_reason == "refusal" else text, "tool_calls": tool_calls,
-                "stop_reason": response.stop_reason, "turns": turn, "usage": usage}
+        return {"answer": "" if reply.stop in ("refusal", "error") else reply.text, "tool_calls": tool_calls,
+                "stop_reason": reply.stop, "turns": turn, "usage": usage}
     return {"answer": "", "tool_calls": tool_calls, "stop_reason": "max_turns", "turns": max_turns, "usage": usage}

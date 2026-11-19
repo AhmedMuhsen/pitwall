@@ -1,14 +1,15 @@
 """Controls for the agent evaluation: a model that behaves perfectly must score 100%, a careless one must score about 0.
 If the grader couldn't tell them apart, a live score would mean nothing. Both stand-ins run through the real agent loop and the
 real tools on the committed data; only the language model is scripted."""
+import json
 from pathlib import Path
-from types import SimpleNamespace as NS
 
 import pytest
 
 from pitwall.agent import run_agent
 from pitwall.agent_eval import grade_case, load_cases, summarise
 from pitwall.agent_tools import load_context
+from pitwall.llm import Completion, ToolCall
 
 CASES = load_cases(Path(__file__).parent.parent / "evals" / "agent_questions.jsonl")
 
@@ -18,42 +19,38 @@ def ctx():
     return load_context(refits=0)
 
 
-def reply(content, stop):
-    return NS(content=content, stop_reason=stop, usage=NS(input_tokens=400, output_tokens=60))
+def say(text):
+    return Completion(text=text, tool_calls=[], stop="end_turn", usage={"input_tokens": 400, "output_tokens": 60, "cost_usd": None}, raw=None)
+
+
+def call(name, args):
+    return Completion(text="", tool_calls=[ToolCall("t1", name, dict(args))], stop="tool_use",
+                      usage={"input_tokens": 400, "output_tokens": 60, "cost_usd": None}, raw=None)
 
 
 class Oracle:
     """Does what each case expects: the right tool call, then an answer built only from the tool's own words."""
 
-    def __init__(self):
-        self.messages = NS(create=self.create)
-
-    def create(self, **request):
-        messages = request["messages"]
+    def complete(self, model, system, messages, tools, max_tokens, effort=None):
         case = next(c for c in CASES if c["question"] == messages[0]["content"])
         expect = case["expect"]
         if len(messages) == 1:                                           # first turn: call the tool the case expects
             if expect["behavior"] == "answer":
-                args = expect["args"]
-                return reply([NS(type="tool_use", id="t1", name="compare_strategy", input=dict(args))], "tool_use")
+                return call("compare_strategy", expect["args"])
             if expect["behavior"] == "lookup":
-                args = expect.get("args", {})
-                return reply([NS(type="tool_use", id="t1", name=expect["tools"][0], input=dict(args))], "tool_use")
+                return call(expect["tools"][0], expect.get("args", {}))
             if expect["behavior"] == "ask":
-                return reply([NS(type="text", text="Which race and which car do you mean?")], "end_turn")
-            cue = expect["must_mention"][0]
-            return reply([NS(type="text", text=f"I can't do that: {cue}. The simulator doesn't cover it.")], "end_turn")
-        import json
-        result = json.loads(messages[-1]["content"][0]["content"])      # second turn: speak only from the tool result
-        text = result.get("verdict", {}).get("summary") or "Here is what the tool returned."
-        return reply([NS(type="text", text=text)], "end_turn")
+                return say("Which race and which car do you mean?")
+            return say(f"I can't do that: {expect['must_mention'][0]}. The simulator doesn't cover it.")
+        result = json.loads(messages[-1]["results"][0]["content"])      # second turn: speak only from the tool result
+        return say(result.get("verdict", {}).get("summary") or "Here is what the tool returned.")
 
 
 class Chatterbox:
     """Never calls a tool, invents numbers and claims optimality."""
 
-    def __init__(self):
-        self.messages = NS(create=lambda **request: reply([NS(type="text", text="Pitting on lap 23 is the optimal strategy: 12.3 s faster.")], "end_turn"))
+    def complete(self, **request):
+        return say("Pitting on lap 23 is the optimal strategy: 12.3 s faster.")
 
 
 def score(client, ctx):

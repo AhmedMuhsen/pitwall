@@ -14,7 +14,9 @@ FORBIDDEN = ("optimal", "guarantee", "definitely", "certainly the best", "the be
 NEGATIONS = ("not ", "n't", "cannot", "never", "no ", "without", "rather than", "nor ")
 DECLINE_CUES = ("can't", "cannot", "can not", "unable", "not able", "isn't", "is not", "doesn't", "does not", "don't",
                 "not available", "no data", "outside", "only covers", "not something", "won't", "unfortunately")
-PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00), "claude-opus-5-5": (4.00, 20.00)}   # $ per 1M tokens
+PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00), "claude-opus-5-5": (4.00, 20.00),
+          "anthropic/claude-haiku-5.5": (0.10, 0.50), "anthropic/claude-sonnet-5.5": (2.00, 10.00),
+          "anthropic/claude-opus-5.5": (4.00, 20.00)}   # $ per 1M tokens (OpenRouter's list matched these on 2026-11-18)
 
 
 def load_cases(path: Path) -> list[dict]:
@@ -158,7 +160,8 @@ def summarise(graded: list[dict], runs: list[dict], model: str) -> dict:
     graded: grade_case results; runs: the matching run_agent results; model: the model id (for the price table)
 
     returns: {"cases", "passed", "pass_rate", "by_group": {group: {"cases", "passed"}}, "by_check": {check: {"cases",
-    "passed"}}, "tool_calls_per_case", "input_tokens", "output_tokens", "cost_usd" (None for an unknown model)}.
+    "passed"}}, "tool_calls_per_case", "input_tokens", "output_tokens", "cost_usd": the provider's reported cost if every run has
+    one, else an estimate from list prices (Anthropic model ids), else None}.
     '''
     by_group, by_check = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
     for item in graded:
@@ -169,11 +172,18 @@ def summarise(graded: list[dict], runs: list[dict], model: str) -> dict:
             by_check[name][1] += ok
     tokens_in = sum(r["usage"]["input_tokens"] for r in runs)
     tokens_out = sum(r["usage"]["output_tokens"] for r in runs)
+    reported = [r["usage"].get("cost_usd") for r in runs]
     price = PRICES.get(model)
     passed = sum(item["passed"] for item in graded)
+    if runs and all(c is not None for c in reported):
+        cost = sum(reported)                                  # what the provider billed
+    elif price is not None:
+        cost = (tokens_in * price[0] + tokens_out * price[1]) / 1_000_000    # estimate from list prices
+    else:
+        cost = None
     return {"cases": len(graded), "passed": passed, "pass_rate": passed / len(graded) if graded else 0.0,
             "by_group": {g: {"cases": n, "passed": p} for g, (n, p) in by_group.items()},
             "by_check": {c: {"cases": n, "passed": p} for c, (n, p) in by_check.items()},
             "tool_calls_per_case": sum(len(r["tool_calls"]) for r in runs) / len(runs) if runs else 0.0,
             "input_tokens": tokens_in, "output_tokens": tokens_out,
-            "cost_usd": None if price is None else (tokens_in * price[0] + tokens_out * price[1]) / 1_000_000}
+            "cost_usd": cost}

@@ -1,14 +1,19 @@
-name: tests
+name: checks
 
 on:
   push:
   pull_request:
 
 jobs:
-  pytest:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --frozen
-      - run: uv run pytest -q
+      - name: Lint
+        run: uv run ruff check src app.py scripts tests
+      - name: Types
+        run: uv run mypy
+      - name: Tests, with a coverage floor
+        run: uv run pytest -q --cov=pitwall --cov-fail-under=90

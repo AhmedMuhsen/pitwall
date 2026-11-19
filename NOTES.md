@@ -555,3 +555,12 @@ Found and fixed: evaluate.py crashed on Interlagos 2024 since the corpus grew (o
 Also fixed: the app and the agent tool printed the same half-width/coverage mismatch; new conformal.coverage_note states coverage with the
 half-width it was measured at (test added, app rendered headless without errors). 289 tests pass.
 Next: step 6 (engineering polish). Not pushed: the app text changed, so a push redeploys the live demo.
+
+## 2026-11-19 Session 41 (step 6: engineering polish)
+
+Done: ruff and mypy at 0 problems (were 51 under the chosen rules and 60), both in CI with pytest and a 90% coverage floor (coverage 97%); comparison.py split
+into strategies/fitting/gaps/comparison (evaluate.py output identical before and after, 962 lines); tests/test_app.py (4 AppTest tests,
+checked to fail when the app is broken); 7 more tests (296 total). Three TypeError crashes on a race with no timed laps are now ValueErrors.
+Next: push when you want CI to run for the first time (it also redeploys the live app).
+Still unclear: whether CI is green on GitHub (same commands pass locally without the anthropic extra). Optional: Node 20 deprecation warning for
+actions/checkout and setup-uv.

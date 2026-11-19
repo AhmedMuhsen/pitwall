@@ -1033,3 +1033,27 @@ One entry per real decision. Format:
   (Sonnet's ask-04 passed in run 1 and failed in run 2). Haiku equals Sonnet here at about 6% of the cost; Opus 5.5 was not tried.
 - **What would make us reconsider** — A live pass rate that depends on the model more than on the tools (then compare Haiku 5.5 and Opus
   5.5), or failures concentrated in one group (then change the tool descriptions, not the model).
+
+## 2026-11-19 — Engineering checks: ruff, mypy and a coverage floor in CI; comparison.py split in four
+
+- **Decision** — `ruff` (rules E4, E7, E9, F and import order), `mypy` over `src` and `app.py`, and `pytest --cov-fail-under=90` run in the
+  CI workflow. The three tools are in the `dev` dependency group (pinned in `uv.lock`; `uv export --no-dev` lists none of them, so the
+  Docker image and the live app don't get them). `comparison.py` (820 lines, five jobs) is split into `strategies.py`, `fitting.py` and
+  `gaps.py`; `comparison.py` keeps the simulate-and-compare functions and re-exports the rest, so no import elsewhere changed.
+  `tests/test_app.py` runs the real app with Streamlit's `AppTest`.
+- **Requirement** — Step 6 of the resume plan: quality that a machine checks, not a claim in the README.
+- **Options** — Tools: dev group (chosen), `uv run --with` in CI (floating versions), none. Coverage: a floor in CI and GitHub's own status
+  badge (chosen), Codecov (external service, token), a static badge (goes stale). Split: re-exporting facade (chosen), update every import,
+  leave as is.
+- **Evidence the split changed nothing** — All 26 functions exist once, with bodies identical apart from `_with_start_ages` becoming
+  `with_start_ages`; no existing test was edited for the split; `scripts/evaluate.py` printed the same 962 lines before and after.
+- **Found by running the checks** — Three places crashed with a `TypeError` on a race with no timed laps (`race_distance` returns `None`);
+  they now raise a clear `ValueError` (tests added). CI's first run would have failed on `import anthropic` in `llm.py`, because the
+  optional extra isn't installed there; mypy now treats that one module as optional. Lint-only edits to tests: unused `result =` bindings
+  dropped and `== True` written `is True` in `test_processing.py` (not weaker: the values are bools).
+- **Known limits** — mypy treats pandas, scikit-learn, pyarrow and anthropic as `Any` (no stubs installed; `pandas-stubs` would check more
+  and add errors). Coverage is 97% of lines; it says nothing about assertion strength. The app test checks "no exception and the main
+  controls work", not every chart. CI has not run on GitHub yet (it runs on push); the same commands pass locally in an environment
+  without the optional extra.
+- **What would make us reconsider** — A real bug that the type checker could have caught with stubs (then add `pandas-stubs`), or the
+  coverage floor blocking a useful change.

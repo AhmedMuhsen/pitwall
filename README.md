@@ -60,6 +60,12 @@ Deploying to AWS (Docker on EC2): [`docs/DEPLOY.md`](docs/DEPLOY.md).
 Every API response is cached and the fetch is resumable, so re-running only fetches what is missing.
 `uv run python scripts/evaluate.py` prints the numbers quoted below.
 
+Checks run on every push ([![checks](https://github.com/AhmedMuhsen/pitwall/actions/workflows/test.yml/badge.svg)](https://github.com/AhmedMuhsen/pitwall/actions/workflows/test.yml)):
+`ruff` (errors, unused code, import order), `mypy` (pandas, scikit-learn and pyarrow are untyped, so their values count as `Any`),
+and `pytest` with a coverage floor of 90%. Line coverage was 97% when this was written (`uv run pytest --cov=pitwall`); it measures
+which lines the tests run, not how strong their assertions are. The Streamlit app is tested headlessly with Streamlit's `AppTest`
+(`tests/test_app.py`).
+
 ## How it works
 
 ```mermaid
@@ -88,9 +94,12 @@ flowchart LR
 | `neutralisation.py` | Safety-car and virtual-safety-car windows; the field's real lap times on those laps; the cost of a stop under a real safety car |
 | `backtest.py`, `evaluation.py` | Real strategies run through the simulator; leave-one-stint-out; metrics and train/test splits |
 | `agent.py`, `agent_tools.py`, `agent_eval.py`, `llm.py` | The what-if agent: its tool-use loop, its three tools, the deterministic grading of its answers, and the provider clients (OpenRouter, Anthropic) |
-| `comparison.py` | The candidate strategies, rankings, sensitivity, refits of the model, verdict: everything the app displays |
+| `strategies.py` | The standard candidate strategies, a user's own strategy, the safety-car candidate |
+| `fitting.py` | Loads the dataset; fits the final model and the 20 refits behind the verdict |
+| `gaps.py` | Reads a comparison: gap ranges over the sensitivity scenarios, the verdict, the lap-by-lap gap |
+| `comparison.py` | Simulates and compares a race or one driver's race using the three above (and re-exports them): everything the app displays |
 
-The app only displays; every number comes from `comparison.py`.
+The app only displays; every number comes from `comparison.py` and the modules it re-exports.
 
 ### The model, in plain words
 

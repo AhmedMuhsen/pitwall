@@ -146,7 +146,7 @@ It is not the probability that the alternative really was faster.
 
 ```bash
 uv sync
-uv run pytest -q                              # 288 tests
+uv run pytest -q                              # 296 tests, plus ruff, mypy and a 90% coverage floor in CI
 uv run python scripts/evaluate.py             # about 85 s: sections 1-5 and the error splits
 uv run python scripts/build_calibration.py    # the intervals, written to data/processed/calibration.json
 uv run python scripts/ablation.py             # docs/MODEL_ABLATION.md

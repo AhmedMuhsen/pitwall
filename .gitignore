@@ -9,6 +9,10 @@ data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+# The three small files the app needs (about 1 MB, derived from OpenF1; docs/DEPLOY.md), so a fresh clone runs.
+!data/processed/lap_dataset.parquet
+!data/processed/driver_names.json
+!data/processed/neutralisations.json
 
 # macOS
 .DS_Store

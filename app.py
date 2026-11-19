@@ -28,9 +28,9 @@ COLOURS = {"faster in every scenario": "#2e7d32", "depends on assumptions": "#8a
 VERDICT_COLOURS = {"agrees": "#2e7d32", "too_close": "#8a8a8a", "leans": "#e0a100", "prefers": "#1f6fb2"}
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Fitting the model on the 2023-2024 races and 20 refits (first visit after a restart only)...")
 def load():
-    """Dataset rows, the fitted inputs and driver names, built once per server (about 2 s)."""
+    """Dataset rows, the fitted inputs and driver names, built once per server (about 5 s on a laptop)."""
     rows = load_dataset(DATASET_PATH)
     windows = load_neutralisations(NEUTRALISATIONS_PATH)
     return rows, fit_inputs(rows, TRAIN_YEARS, windows, refits=REFITS), load_driver_names(NAMES_PATH)

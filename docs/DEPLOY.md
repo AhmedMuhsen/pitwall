@@ -1,7 +1,20 @@
 # Deploying PitWall: Docker on one EC2 instance
 
-**Status: not deployed yet.** The container is built and tested locally (see "What was and wasn't tested").
+**Status: not deployed yet.** (Decision: Docker on EC2, on AWS free-plan credits.) The container is built and tested locally (see "What was and wasn't tested").
 **No AWS command below has been run.** You run each one, so you see what it does; if one fails, paste the output.
+
+## The free window, and what happens when it closes
+
+This runs on AWS free-plan credits. A new account's free plan ends after 6 months or when the credits run out, whichever
+comes first, and then the account closes unless you upgrade to a paid plan
+([AWS announcement](https://aws.amazon.com/about-aws/whats-new/2025/07/aws-free-tier-credits-month-free-plan)). ECS has no charge
+of its own, but a server does: roughly $20 a month for this setup (a rough figure from memory; confirm in the Pricing Calculator).
+
+- **Now:** read your credit balance and expiry under Billing -> Credits, and note the date.
+- **A month before it ends:** either upgrade, or move the demo. Streamlit Community Cloud is free and `app.py` already works
+  there (it adds `src/` to the import path); create the app at <https://share.streamlit.io> from this repo, main file `app.py`,
+  Python 3.13, then point the README at the new URL.
+- Don't put an AWS URL on your resume without that date in mind.
 
 ## What you will create
 

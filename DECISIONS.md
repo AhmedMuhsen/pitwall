@@ -923,3 +923,17 @@ One entry per real decision. Format:
   advice). The README says so and disclaims any affiliation.
 - **What would make us reconsider** — OpenF1 or F1 objecting to the data in the repo (then build on the server and
   remove the files from history), a first x86 build failing, or the instance running out of memory.
+
+## 2026-11-18 — Deployment on AWS free-plan credits: EC2 + Docker, with an exit plan for month 6
+
+- **Decision** — Keeps "Docker on EC2" (above). Ahmed has about 6 months left on an AWS free plan and chose EC2 + Docker over
+  ECS on EC2 and ECS on Fargate. `app.py` also adds `src/` to the import path (tested with the project un-importable) so
+  Streamlit Community Cloud can host it for free when the AWS window closes.
+- **Why not ECS now** — ECS has no charge of its own; the EC2 or Fargate compute under it does. EC2 + Docker is the cheapest
+  on the credits and already tested; ECS on EC2 adds an image repository, a task definition and a service for the same
+  compute cost; a 24/7 Fargate task could use up the credits well before 6 months.
+- **Known limit** — The free plan ends after 6 months or when credits run out, whichever is first, then the account closes
+  unless upgraded ([AWS announcement](https://aws.amazon.com/about-aws/whats-new/2025/07/aws-free-tier-credits-month-free-plan)).
+  The monthly cost (about $20) is an estimate from memory, not from the console.
+- **What would make us reconsider** — Credits burning faster than planned (check Billing -> Credits weekly), or wanting ECS on
+  the resume (then ECS on EC2 with the same image).

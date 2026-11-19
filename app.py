@@ -3,7 +3,11 @@
 Run with `uv run streamlit run app.py`. Only displays results; every number
 comes from pitwall.comparison.
 """
+import sys
 from pathlib import Path
+
+# Lets a host that doesn't install this project (Streamlit Community Cloud) import pitwall from src/.
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import altair as alt
 import pandas as pd

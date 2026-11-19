@@ -87,6 +87,7 @@ flowchart LR
 | `traffic.py` | Lap-time penalty by gap to the car ahead; the real field replayed from lap start times |
 | `neutralisation.py` | Safety-car and virtual-safety-car windows; the field's real lap times on those laps; the cost of a stop under a real safety car |
 | `backtest.py`, `evaluation.py` | Real strategies run through the simulator; leave-one-stint-out; metrics and train/test splits |
+| `agent.py`, `agent_tools.py`, `agent_eval.py` | The what-if agent: its tool-use loop, its three tools, and the deterministic grading of its answers |
 | `comparison.py` | The candidate strategies, rankings, sensitivity, refits of the model, verdict: everything the app displays |
 
 The app only displays; every number comes from `comparison.py`.
@@ -228,6 +229,34 @@ its measured coverage.
 different random 80% subsets of the training races: in 90% or more of them for "prefers", 70% or more for
 "leans". Smaller or less stable gaps are "too close for the model to call". This measures how much the answer
 depends on which races the model saw; it is not the probability that the alternative really was faster.
+
+## What-if agent (optional, command line)
+
+A language model that answers questions like "what if Norris had pitted on lap 20 at Monza 2024?" by calling the simulator as a
+tool (`src/pitwall/agent.py`, `agent_tools.py`). It does the language; the simulator does every calculation. Three tools:
+`list_races`, `list_cars` and `compare_strategy`, which return compact JSON (the verdict, each alternative's gap and range, how
+many refits agree, the calibrated intervals, caveats). Problems come back as readable errors ("Monte Carlo 2024 isn't available:
+a red flag stopped the race"), not as exceptions.
+
+```bash
+uv sync --extra agent                    # the anthropic SDK is an optional extra: the app and the Docker image don't install it
+export ANTHROPIC_API_KEY=...             # or: ant auth login
+uv run python scripts/ask.py "What if Leclerc had pitted on lap 20 at Monza 2024?" -v
+```
+
+It uses Claude Sonnet 5.5 by default (`--model` to change) and runs only from the command line: nothing public, so no hosting cost
+and no one else spends your API credit. The system prompt's rules are what the evaluation checks: every number must come from a tool
+result, never "optimal", ask when the race or car is missing, and decline what the simulator can't do (finishing positions,
+comparing drivers, 2022 or 2026, wet or red-flag races, hypothetical safety cars).
+
+**Evaluation.** 40 questions (`evals/agent_questions.jsonl`): 14 with a named strategy, 6 open "should he have..." questions, 5 lookups,
+10 that must be declined, 5 that must be answered with a question. Grading is deterministic (`src/pitwall/agent_eval.py`, no model
+as judge): the right tool with the right arguments (race and car compared after resolution), every number in the answer present in
+a tool result or the question (rounding allowed), no optimality claims (negation-aware), a decline or a question where one is due.
+The harness itself is checked with controls: a scripted agent that does exactly what each case expects scores 40/40, and a careless
+one that never calls a tool and invents numbers scores at most 2/40 (`tests/test_agent_controls.py`). Live results go in
+[`docs/AGENT_EVAL.md`](docs/AGENT_EVAL.md) after `uv run python scripts/run_agent_eval.py` (it spends API credit and reports the measured cost).
+What the grader can't catch: a number that is in a tool result but used wrongly (for example reading a negative gap as slower).
 
 ## Reading the results
 

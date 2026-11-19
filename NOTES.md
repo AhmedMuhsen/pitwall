@@ -519,3 +519,19 @@ first (the live demo redeploys).
 
 Still unclear: race-total intervals under-cover on 2025 (73%). Not fixed by recalibration or by the model; refitting the shipped
 model on 2025 is the open option.
+
+## 2026-11-19 Session 39 (step 4: the what-if agent)
+
+Done: agent.py (manual tool-use loop), agent_tools.py (3 tools returning JSON/explained errors), agent_eval.py (deterministic grading),
+40 questions (evals/agent_questions.jsonl, made by scripts/make_agent_eval.py), scripts/ask.py and scripts/run_agent_eval.py,
+describe.py (shared plain-language helpers; the app imports them), race_selection.json (why a race is unavailable), the optional
+`anthropic` extra. 275 tests pass. The harness is validated with controls: a perfect scripted agent 40/40, a careless one <= 2/40.
+Found while building: the first version answered a "what if he pitted on lap 20" question with the best of the standard
+alternatives; compare_strategy now returns a separate `your_strategy` verdict.
+
+Next: you run the live evaluation once with your own key (`uv sync --extra agent`, `export ANTHROPIC_API_KEY=...`,
+`uv run python scripts/run_agent_eval.py --limit 5` first, then without --limit) and send me docs/AGENT_EVAL.md. Then step 5
+(model card + write-up) and step 6 (engineering polish).
+
+Still unclear: how Sonnet 5.5 scores; the grading checks wording and numbers, not whether the answer was interpreted correctly.
+Not pushed: the app imports describe.py now, so a push redeploys the live demo.

@@ -4,6 +4,8 @@ docs/DATA_QUALITY.md (counts per included race) and docs/RACE_SELECTION.md (ever
 from collections import Counter
 from pathlib import Path
 
+import json
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -14,6 +16,7 @@ from pitwall.processing import (build_race_rows, keep_dataset_columns, quality_m
 OUTPUT_PATH = Path("data/processed/lap_dataset.parquet")
 REPORT_PATH = Path("docs/DATA_QUALITY.md")
 SELECTION_PATH = Path("docs/RACE_SELECTION.md")
+SELECTION_JSON_PATH = Path("data/processed/race_selection.json")
 # A race where more than this share of laps has no stint (so no compound or tyre age) is left out.
 MAX_MISSING_STINT_SHARE = 0.05
 
@@ -74,6 +77,9 @@ def main():
 
     REPORT_PATH.write_text(quality_markdown(report), encoding="utf-8")
     SELECTION_PATH.write_text(selection_markdown(selection), encoding="utf-8")
+    SELECTION_JSON_PATH.write_text(json.dumps(
+        {f"{s['circuit']} {s['year']}": {"used": not s["reasons"], "reasons": [r.split(":")[0] for r in s["reasons"]]}
+         for s in selection}, indent=1), encoding="utf-8")
     print(f"Wrote {REPORT_PATH} and {SELECTION_PATH}")
 
 

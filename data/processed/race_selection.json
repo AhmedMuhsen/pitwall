@@ -1,0 +1,311 @@
+{
+ "Sakhir 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Jeddah 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Melbourne 2023": {
+  "used": false,
+  "reasons": [
+   "red_flag"
+  ]
+ },
+ "Baku 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Miami 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Monte Carlo 2023": {
+  "used": false,
+  "reasons": [
+   "wet_tyres"
+  ]
+ },
+ "Catalunya 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Montreal 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Spielberg 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Silverstone 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Hungaroring 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Spa-Francorchamps 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Zandvoort 2023": {
+  "used": false,
+  "reasons": [
+   "red_flag",
+   "wet_tyres"
+  ]
+ },
+ "Monza 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Singapore 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Suzuka 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Lusail 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Austin 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Mexico City 2023": {
+  "used": false,
+  "reasons": [
+   "red_flag"
+  ]
+ },
+ "Interlagos 2023": {
+  "used": false,
+  "reasons": [
+   "red_flag"
+  ]
+ },
+ "Las Vegas 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Yas Marina Circuit 2023": {
+  "used": true,
+  "reasons": []
+ },
+ "Sakhir 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Jeddah 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Melbourne 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Suzuka 2024": {
+  "used": false,
+  "reasons": [
+   "red_flag"
+  ]
+ },
+ "Shanghai 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Miami 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Imola 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Monte Carlo 2024": {
+  "used": false,
+  "reasons": [
+   "red_flag"
+  ]
+ },
+ "Montreal 2024": {
+  "used": false,
+  "reasons": [
+   "wet_tyres"
+  ]
+ },
+ "Catalunya 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Spielberg 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Silverstone 2024": {
+  "used": false,
+  "reasons": [
+   "wet_tyres"
+  ]
+ },
+ "Hungaroring 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Spa-Francorchamps 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Zandvoort 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Monza 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Baku 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Singapore 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Austin 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Mexico City 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Interlagos 2024": {
+  "used": false,
+  "reasons": [
+   "red_flag",
+   "wet_tyres"
+  ]
+ },
+ "Las Vegas 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Lusail 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Yas Marina Circuit 2024": {
+  "used": true,
+  "reasons": []
+ },
+ "Melbourne 2025": {
+  "used": false,
+  "reasons": [
+   "wet_tyres"
+  ]
+ },
+ "Shanghai 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Suzuka 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Sakhir 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Jeddah 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Miami 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Imola 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Monte Carlo 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Catalunya 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Montreal 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Spielberg 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Silverstone 2025": {
+  "used": false,
+  "reasons": [
+   "wet_tyres"
+  ]
+ },
+ "Spa-Francorchamps 2025": {
+  "used": false,
+  "reasons": [
+   "red_flag",
+   "wet_tyres"
+  ]
+ },
+ "Hungaroring 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Zandvoort 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Monza 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Baku 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Singapore 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Austin 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Mexico City 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Interlagos 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Las Vegas 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Lusail 2025": {
+  "used": true,
+  "reasons": []
+ },
+ "Yas Marina Circuit 2025": {
+  "used": true,
+  "reasons": []
+ }
+}

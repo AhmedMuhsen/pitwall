@@ -994,3 +994,33 @@ One entry per real decision. Format:
   different model).
 - **What would make us reconsider** — New inputs that vary by race (tyre allocation, fuel load, engine modes, a 2026 season
   under different regulations), or a same-car-two-strategies data source.
+
+## 2026-11-19 — The what-if agent: a manual tool-use loop on Claude Sonnet 5.5, command line only, graded deterministically
+
+- **Decision** — `agent.py` runs a manual tool-use loop (not the SDK's tool runner) over three tools (`list_races`, `list_cars`,
+  `compare_strategy`) defined in `agent_tools.py` with `strict: true` schemas in which every parameter is required (empty lists mean
+  "standard comparison"). Default model `claude-sonnet-5-5`, `effort: medium`. It runs only from the command line (`scripts/ask.py`,
+  `scripts/run_agent_eval.py`) with the user's own API key. The `anthropic` package is an optional extra (`agent`), so the Streamlit
+  app and the Docker image don't install it. Evaluated on 40 questions with deterministic grading (`agent_eval.py`).
+- **Requirement** — CLAUDE.md Phase 2: an agent that answers what-if questions by calling the simulator as a tool, with an eval set.
+- **Options** — Where it runs: command line and eval only (chosen), a bring-your-own-key box in the app, or hosted with the owner's key
+  (costs money per question and invites abuse; rejected, the project's budget is $0). Model: Sonnet 5.5 (chosen), Opus 5.5, Haiku 5.5.
+  Loop: SDK tool runner (beta) or manual (chosen: every call and result must be recorded for grading). Dependency: the SDK as an optional
+  extra (chosen) or hand-written HTTP.
+- **Design choices that follow from the API** — No forced `tool_choice` (Sonnet 5.5 returns a 400); tool results for one turn go back in a
+  single user message; thinking blocks are passed back unchanged; refusals return an empty answer with `stop_reason: "refusal"`.
+  Server-side refusal fallbacks are NOT enabled: they need a beta parameter I could not test without a key, and refusals are unlikely in this
+  domain.
+- **Why the tools return explanations** — Unknown or unavailable races return a reason from `race_selection.json` (red flag, wet tyres, no
+  other race at that circuit, no replayable safety car), so an honest "can't" is grounded in data, not in the model's memory. A question
+  about one specific strategy gets a separate `your_strategy` verdict (found when the first version answered about the best of the standard
+  alternatives instead).
+- **Grading** — Per question: right tool and arguments (race and car compared after resolution), every number in the answer found in a tool
+  result or the question (within rounding; whole numbers up to 10 and years are ignored), no optimality claims (negation-aware), declines
+  where it must, asks a question where it must. Controls: a scripted perfect agent scores 40/40 and a careless one at most 2/40.
+- **Known limits** — The grounding check is lexical: it cannot tell that a correct number was misread (a negative gap called slower), or that
+  a correct number was attached to the wrong strategy. The 40 questions were written by the same author as the grader, so they probe known
+  failure modes, not unknown ones. **No live run has been done yet** (no API key was available to the assistant); `docs/AGENT_EVAL.md` is
+  produced by the first one.
+- **What would make us reconsider** — A live pass rate that depends on the model more than on the tools (then compare Haiku 5.5 and Opus
+  5.5), or failures concentrated in one group (then change the tool descriptions, not the model).

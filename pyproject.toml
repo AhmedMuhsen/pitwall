@@ -13,6 +13,11 @@ dependencies = [
     "streamlit>=1.67.0",
 ]
 
+[project.optional-dependencies]
+agent = [
+    "anthropic>=2.10.0",
+]
+
 [dependency-groups]
 dev = ["pytest>=8"]
 

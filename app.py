@@ -17,6 +17,7 @@ from pitwall.comparison import (STINT_ERROR_FLOOR, TRAIN_YEARS, comparable_races
                                 driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names,
                                 race_session_key, race_settings, verdict)
 from pitwall.conformal import load_calibration
+from pitwall.describe import plain, race_clock
 from pitwall.neutralisation import load_neutralisations
 
 DATASET_PATH = Path(__file__).parent / "data" / "processed" / "lap_dataset.parquet"
@@ -37,23 +38,6 @@ def load():
     windows = load_neutralisations(NEUTRALISATIONS_PATH)
     return (rows, fit_inputs(rows, TRAIN_YEARS, windows, refits=REFITS), load_driver_names(NAMES_PATH),
             load_calibration(CALIBRATION_PATH))
-
-
-def plain(strategy: dict) -> str:
-    """'2 stops: Medium → Hard → Hard, laps 23 & 46' for a strategy dict."""
-    ages = strategy.get("start_ages", [0] * len(strategy["compounds"]))
-    stints = [c.title() + (" (used)" if age else "") for c, age in zip(strategy["compounds"], ages)]
-    stops = [str(p) for p in strategy["pit_laps"]]
-    laps = stops[0] if len(stops) == 1 else ", ".join(stops[:-1]) + " & " + stops[-1]
-    count = len(stops)
-    return f"{count} stop{'s' if count != 1 else ''}: {' → '.join(stints)}, lap{'s' if count != 1 else ''} {laps}"
-
-
-def race_clock(seconds: float) -> str:
-    """5531.2 -> '1:32:11.2'."""
-    minutes, secs = divmod(seconds, 60)
-    hours, minutes = divmod(int(minutes), 60)
-    return f"{hours}:{minutes:02d}:{secs:04.1f}"
 
 
 def interval_text(calibration: dict | None, target: str, value: float | None = None) -> str:

@@ -14,6 +14,7 @@ data/processed/*
 !data/processed/driver_names.json
 !data/processed/neutralisations.json
 !data/processed/calibration.json
+!data/processed/race_selection.json
 
 # macOS
 .DS_Store

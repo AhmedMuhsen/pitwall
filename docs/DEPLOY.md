@@ -5,10 +5,11 @@
 
 ## The free window, and what happens when it closes
 
-This runs on AWS free-plan credits. A new account's free plan ends after 6 months or when the credits run out, whichever
+This runs on AWS free-plan credits. On 2026-11-18 the balance was $78, expiring in 99 days (about **2027-02-25**; set a reminder
+for 2027-02-11). A free plan ends after 6 months or when the credits run out, whichever
 comes first, and then the account closes unless you upgrade to a paid plan
 ([AWS announcement](https://aws.amazon.com/about-aws/whats-new/2025/07/aws-free-tier-credits-month-free-plan)). ECS has no charge
-of its own, but a server does: roughly $20 a month for this setup (a rough figure from memory; confirm in the Pricing Calculator).
+of its own, but a server does: roughly $17 a month for this setup with a `t4g.small` (a rough figure from memory; confirm in the Pricing Calculator).
 
 - **Now:** read your credit balance and expiry under Billing -> Credits, and note the date.
 - **A month before it ends:** either upgrade, or move the demo. Streamlit Community Cloud is free and `app.py` already works
@@ -20,7 +21,7 @@ of its own, but a server does: roughly $20 a month for this setup (a rough figur
 
 | Resource | Why | Cost note |
 |---|---|---|
-| 1 EC2 instance, `t3.small` (2 GB RAM) | runs the container; the app peaks near 470 MB per session, so 1 GB is too tight | on-demand hourly price |
+| 1 EC2 instance, `t4g.small` (ARM, 2 GB RAM) | runs the container; the app peaks near 470 MB per session, so 1 GB is too tight | on-demand hourly price |
 | 16 GB gp3 EBS volume | Docker image (1.3 GB) + OS | per GB-month |
 | 1 Elastic IP | a stable address | public IPv4 addresses are billed hourly |
 | Security group | SSH from your IP only, HTTP from anywhere | free |
@@ -34,7 +35,7 @@ Everything is torn down by the commands in section 9. **Tear it down when you st
 1. **Don't use the root account's keys.** Use an IAM user or Identity Center user with MFA, and make it your CLI profile
    (`aws configure`, or `aws configure sso`). Check who you are: `aws sts get-caller-identity`.
 2. **Budget alert.** Edit `deploy/budget-notifications.json` (replace `YOU@example.com` twice) and, if you like,
-   the amount in `deploy/budget.json` (15 USD per month by default), then:
+   the amount in `deploy/budget.json` (30 USD per month by default: a signal that something is wrong, not a target), then:
 
    ```bash
    ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
@@ -49,7 +50,7 @@ Everything is torn down by the commands in section 9. **Tear it down when you st
 ```bash
 export AWS_DEFAULT_REGION=us-east-1          # use the region closest to you
 MYIP=$(curl -s https://checkip.amazonaws.com)
-AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64 \
       --query Parameter.Value --output text)
 echo "$MYIP  $AMI"
 ```
@@ -78,7 +79,7 @@ If `$VPC` comes back as `None`, the account has no default VPC: stop and ask.
 (build the image, start the container).
 
 ```bash
-INSTANCE=$(aws ec2 run-instances --image-id $AMI --instance-type t3.small --key-name pitwall \
+INSTANCE=$(aws ec2 run-instances --image-id $AMI --instance-type t4g.small --credit-specification CpuCredits=standard --key-name pitwall \
     --security-group-ids $SG --user-data file://deploy/user-data.sh \
     --metadata-options HttpTokens=required,HttpEndpoint=enabled \
     --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=16,VolumeType=gp3,Encrypted=true,DeleteOnTermination=true}' \
@@ -163,9 +164,9 @@ The budget stays (it costs nothing); delete it with `aws budgets delete-budget -
 Tested locally (macOS, Docker 28, arm64): the image builds (1.26 GB), the container is healthy in about 9 s, serves
 HTTP 200, runs as a non-root user, the app executes inside it for 50 races, a session peaks at 471 MB, and
 `deploy/deploy.sh` builds, starts and replaces the container twice in a row.
-**Not tested:** every AWS command, the Amazon Linux install line in `deploy/user-data.sh`, and building on x86 (the server
-is x86_64, my laptop arm64; the Dockerfile uses only multi-arch base images and wheels, but the first server build is
-the real test).
+**Not tested:** every AWS command, the Amazon Linux install line in `deploy/user-data.sh`, and Docker on Amazon Linux 2023,
+which has no buildx plugin, so `docker build` falls back to the classic builder (the Dockerfile uses only features it supports).
+The server (`t4g.small`) is arm64 like the laptop it was tested on, so the image is the same architecture.
 
 ## Known limits to state
 

@@ -937,3 +937,12 @@ One entry per real decision. Format:
   The monthly cost (about $20) is an estimate from memory, not from the console.
 - **What would make us reconsider** — Credits burning faster than planned (check Billing -> Credits weekly), or wanting ECS on
   the resume (then ECS on EC2 with the same image).
+
+## 2026-11-18 — Instance type: t4g.small (ARM), because of a 99-day, $78 credit balance
+
+- **Decision** — `t4g.small` with an arm64 Amazon Linux 2023 image and `CpuCredits=standard`, instead of `t3.small`.
+- **Reason** — About 15% cheaper (roughly $17 a month against $20; figures from memory, not the console), so the $78 covers
+  the 99 days with room to spare, and the container was built and tested on arm64 (Apple silicon), so the server runs the
+  architecture that was verified. `standard` credits throttle a burst instead of billing for it.
+- **Known limit** — The credit balance expires about 2027-02-25. The demo must be torn down or moved before then
+  (`docs/DEPLOY.md`); the resume link should be the free Streamlit Community Cloud URL.

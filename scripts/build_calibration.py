@@ -73,6 +73,8 @@ def main():
             if record["predicted"] is not None:
                 records.append({"year": year, "circuit": circuit, "error": record["error"]})
     targets["race_total"] = summarise_target(*split_errors(records, order), LEVEL)
+    by_year = pd.DataFrame(records).groupby("year")["error"].mean()
+    print("race-total mean error by year (+ = predicted too slow): " + ", ".join(f"{y}: {e:+.1f} s" for y, e in by_year.items()))
 
     # Race totals, races with a safety car or virtual safety car: lap times replayed, cheaper stops under a real one.
     sc = pd.DataFrame(ev.safety_car_backtest(rows, windows))

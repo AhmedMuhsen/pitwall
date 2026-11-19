@@ -11,8 +11,6 @@ import pandas as pd
 
 from pitwall.backtest import actual_strategy, first_half_pace
 from pitwall.features import driver_reference_laps
-
-# Final model and training years: DECISIONS 2026-11-17 and 2026-11-18.
 from pitwall.fitting import (
     FINAL_ALPHA,
     TRAIN_YEARS,

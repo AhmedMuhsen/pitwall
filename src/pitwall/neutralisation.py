@@ -2,7 +2,7 @@
 
 PitWall runs after the race, so it knows exactly when each safety car came out. Laps under one
 take the field's real lap time (not a model prediction), and a stop under a real safety car costs
-a fraction of the circuit's normal pit loss. Random safety cars are out of scope (DECISIONS 2026-11-18).
+a fraction of the circuit's normal pit loss. Random safety cars are out of scope.
 """
 import json
 from statistics import median, quantiles

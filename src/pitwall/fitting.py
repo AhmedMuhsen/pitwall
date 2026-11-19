@@ -24,10 +24,7 @@ from pitwall.traffic import (
     fit_traffic_penalty,
 )
 
-# Final model and training years: DECISIONS 2026-11-17 and 2026-11-18.
-
-
-# Final model and training years: DECISIONS 2026-11-17 and 2026-11-18.
+# The final model is fitted on 2023 and 2024; 2025 is the held-out test and is never used to choose or tune anything.
 FINAL_ALPHA = 100_000
 
 
@@ -47,7 +44,7 @@ def load_dataset(path) -> list[dict]:
     raises FileNotFoundError if the file doesn't exist, ValueError if it has no rows.
     '''
     rows = pq.read_table(path).to_pylist()
-    # Each race's reference comes from that race's own clean laps (DECISIONS 2026-11-12).
+    # Each race's reference comes from that race's own clean laps.
     rows = add_delta(rows, driver_reference_laps(rows))
     return add_race_fraction(rows)
 
@@ -113,7 +110,7 @@ def fit_inputs(rows: list[dict], train_years: list[int] = TRAIN_YEARS,
         "max_ages": dict (circuit, compound) -> oldest clean tyre age
         "held_out_wear_errors": held_out_wear_errors over train_years
         "wear_range": 75th percentile of those errors (s per lap of age),
-            the wear sensitivity range (DECISIONS 2026-11-18)
+            the wear sensitivity range
 
     raises ValueError if fewer than two train_years (the wear range needs a
     held-out year) or a year has no rows.

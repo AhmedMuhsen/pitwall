@@ -312,7 +312,7 @@ def print_held_out_2024(train):
 
 def print_strategy_comparison(rows):
     """Candidate strategies ranked at each circuit's 2024 race by P_1e5 fitted on 2023+2024
-    (DECISIONS 2026-11-17), then re-ranked with pit loss at q25/q75 and wear ± the 75th
+    then re-ranked with pit loss at q25/q75 and wear ± the 75th
     percentile of the held-out wear error."""
     inputs = fit_inputs(rows, TRAIN_YEARS)
     slopes = pd.Series(inputs["held_out_wear_errors"])
@@ -571,7 +571,7 @@ def main():
     train, test = split_by_year(rows, [2024], [2025])
     print(f"train (2024): {len(train)} rows, test (2025): {len(test)} rows")
 
-    # No 2024 wear rate exists for these pairs, so every model skips them (DECISIONS 2026-11-13).
+    # No 2024 wear rate exists for these pairs, so every model skips them.
     pairs = training_pairs(train)
     unseen = [row for row in test if (row["compound"], row["circuit"]) not in pairs]
     test = [row for row in test if (row["compound"], row["circuit"]) in pairs]

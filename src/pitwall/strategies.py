@@ -3,9 +3,6 @@
 
 from pitwall.simulator import validate_strategy
 
-# Final model and training years: DECISIONS 2026-11-17 and 2026-11-18.
-
-
 BASELINE = "1stop_MH_early"
 
 

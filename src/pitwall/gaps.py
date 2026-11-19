@@ -3,11 +3,8 @@ from typing import Any
 
 import pandas as pd
 
-# Final model and training years: DECISIONS 2026-11-17 and 2026-11-18.
-
-
 # Median absolute error, in seconds, when a stint is predicted from the same car's other stints
-# (scripts/evaluate.py print_stint_check; DECISIONS 2026-11-18). Re-measured on the 57-race 2023-2025 corpus: 5.3 s cross-year, 5.6 s on 2025.
+# (scripts/evaluate.py print_stint_check). Re-measured on the 57-race 2023-2025 corpus: 5.3 s cross-year, 5.6 s on 2025.
 STINT_ERROR_FLOOR = 5.3
 
 

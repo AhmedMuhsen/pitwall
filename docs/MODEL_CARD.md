@@ -162,9 +162,9 @@ uv run python scripts/ablation.py             # docs/MODEL_ABLATION.md
 | Whole-race backtest 9.75 / 9.89 / 11.64 s, 179 driver-races | `scripts/evaluate.py`, cross-year race-total backtest |
 | Stint check 7.7 / 5.3 / 25.6 and 8.2 / 5.6 / 29.5 s, first-stint bias | `scripts/evaluate.py`, "Leave-one-stint-out" |
 | Pair check, 69% and 85%, 43-63%, 71-75%, 85-99%, traffic gain | `scripts/evaluate.py`, "Strategy pairs" |
-| Safety-car totals 162.3 / 17.3 / 17.0 s, 312 cars | `scripts/evaluate.py`, safety-car backtest; stop ratio 0.65 from 102 stops: `DECISIONS.md` 2026-11-18 |
+| Safety-car totals 162.3 / 17.3 / 17.0 s, 312 cars | `scripts/evaluate.py`, safety-car backtest; stop ratio 0.65 from 102 stops: the same output ("SC stop ratio from training years") |
 | Interval half-widths, coverage and test counts | `data/processed/calibration.json` (the `static` entries), `scripts/build_calibration.py` |
-| 2025 bias of +4.8 s against +1.0 s in 2023/24 | `DECISIONS.md` 2026-11-19, prediction intervals |
+| 2025 race-total bias of +4.8 s against about +1.0 s in 2023/24 (+0.8 and +1.3) | `scripts/build_calibration.py` prints it by year; the +1.0 is also the bias in `scripts/evaluate.py`'s backtest |
 | 13 model variants, lap error range, bias figures, old-tyre bias +0.18 s (1,613 laps) | [`MODEL_ABLATION.md`](MODEL_ABLATION.md), from `scripts/ablation.py` |
 | Agent results | [`AGENT_EVAL_sonnet.md`](AGENT_EVAL_sonnet.md), [`AGENT_EVAL_haiku.md`](AGENT_EVAL_haiku.md) and their `_run1` first runs |
 | "About 1.5 standard errors" | my arithmetic: 0.80 - 0.71 = 0.09 against sqrt(0.8 x 0.2 / 83) = 0.044 |

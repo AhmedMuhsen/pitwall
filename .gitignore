@@ -19,5 +19,10 @@ data/processed/*
 !data/processed/calibration.json
 !data/processed/race_selection.json
 
+# Local working files: project rules for the coding assistant, a decision log and session notes
+CLAUDE.md
+DECISIONS.md
+NOTES.md
+
 # macOS
 .DS_Store

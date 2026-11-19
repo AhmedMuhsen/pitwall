@@ -194,7 +194,7 @@ By size of the predicted gap the faster car is picked 43-63% of the time under 5
 
 **Traffic** is a lap-time penalty that depends on the gap to the car ahead, estimated from lap start times: a
 lap starting within half a second of another car is about +0.5 s slower than an average lap, falling to nothing
-beyond about 2 s ([DECISIONS](DECISIONS.md), 2026-11-18). It improves the second-half gap error by 0.3 s
+beyond about 2 s. It improves the second-half gap error by 0.3 s
 (2023/24) and 0.8 s (2025) and the whole-race backtest by 0.1 s. It was checked on real strategies only; how
 well it describes an alternative cannot be checked (there is no real data for one), and the other cars never
 react.
@@ -333,6 +333,4 @@ license; check OpenF1's terms before reusing it.
 `docs/MODEL_CARD.md` says what the model is for, how well it works and where every number comes from;
 `docs/WRITEUP.md` is a short write-up of one decision, one failed approach and one lesson.
 
-`CLAUDE.md` holds the working rules, `docs/PITWALL_PLAN.md` the roadmap, `docs/SPEC.md` the one-page
-spec, `NOTES.md` a short log per session and `DECISIONS.md` every real design decision with the
-alternatives considered.
+`docs/PITWALL_PLAN.md` is the original roadmap, `docs/SPEC.md` the one-page spec and `docs/MODEL_ABLATION.md` the model variants that were tried.

@@ -27,7 +27,7 @@ That 5.3 s became the line the app uses: a predicted gap smaller than the model'
 call", and a larger one must also stay faster when the model is refitted on 20 different random 80% subsets of the training races. The
 pair check agrees with it: below a 5 s predicted gap the faster car is picked 43-63% of the time (a coin flip); above 10 s, 85-99%.
 Teammate pairs would have been cleaner, but I found only 20 of them in 7 races, with pace differences that swamped the signal, so I
-rejected them (`DECISIONS.md`, 2026-11-18).
+rejected them.
 
 ## A failed approach: thirteen model variants and a boosted-trees benchmark
 
@@ -66,5 +66,7 @@ decide how to validate strategy gaps before building the first backtest, not aft
 
 ## Where the numbers come from
 
-Every figure above is in [`MODEL_CARD.md`](MODEL_CARD.md) with its source, or in `DECISIONS.md` under the date given. The evaluation
-is one command (`uv run python scripts/evaluate.py`, about 85 seconds) and the test suite is `uv run pytest -q`.
+The figures for the final model are in [`MODEL_CARD.md`](MODEL_CARD.md), each with the command that prints it; the evaluation is one
+command (`uv run python scripts/evaluate.py`, about 85 seconds) and the test suite is `uv run pytest -q`. The 52% first pair test, the
+10.8 s against 11.8 s comparison, the teammate-pair attempt and the 6-race calibration window were measured during development, on the
+smaller 15-race data set for the first two, and are not reproduced by a committed script.

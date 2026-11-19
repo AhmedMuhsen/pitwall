@@ -4,6 +4,9 @@ A small F1 race-strategy simulator built on historical timing data. Pick a race 
 PitWall shows the strategy that car really ran, then estimates how its race time would have changed
 under a few other pit strategies, and how far to trust the comparison.
 
+**Live demo: <https://pitwall-formula1.streamlit.app/>** (free hosting; it sleeps after about 12 hours without visitors, so the
+first load can take a while).
+
 A learning project, not affiliated with Formula 1, the FIA or FOM. It estimates lap-time loss that
 goes with tyre age under a simple model. It does **not** find the best strategy.
 

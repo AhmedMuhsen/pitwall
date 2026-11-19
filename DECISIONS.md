@@ -946,3 +946,28 @@ One entry per real decision. Format:
   architecture that was verified. `standard` credits throttle a burst instead of billing for it.
 - **Known limit** — The credit balance expires about 2027-02-25. The demo must be torn down or moved before then
   (`docs/DEPLOY.md`); the resume link should be the free Streamlit Community Cloud URL.
+
+## 2026-11-19 — Prediction intervals: split conformal at 80%, measured on 2025, calibrated race by race
+
+- **Decision** — `conformal.py` gives an interval for four targets: a clean lap time, a race total (races without and with a
+  safety car, separately) and the gap between two real cars in the second half of a race. Half-width = the k-th smallest
+  absolute error, k = ceil((n + 1) * 0.8), on held-out errors (2023/24, each year scored by the model fitted on the
+  other; plus 2025 errors from the final model once 2025 has been used for testing). `scripts/build_calibration.py`
+  writes `data/processed/calibration.json`; the app loads it and shows each interval next to its measured coverage.
+- **Requirement** — A confidence statement that is tested, not assumed (resume plan step 2); the app's verdict and
+  totals had no calibrated error bars.
+- **Options** — Scope: lap + race total + gap (chosen), race total + lap only, plus stint-level gap intervals.
+  Calibration: rolling race by race (chosen), per-circuit (too few races per circuit), static.
+- **Result (80% nominal, 2025 held out)** — lap 79% / 79% (static / rolling); race total, no safety car 71% / 73%; race total, safety
+  car 89% / 89%; gap 89% / 88%. Half-widths used by the app: 0.87 s, 17.2 s, 26.7 s, 15.9 s.
+- **What went wrong and what was tried** — Race totals under-cover because 2025 errors are biased (mean +4.8 s, against +1.0
+  s in 2023/24; median |error| 11.0 against 8.0 s). Rolling calibration helped only 71 -> 73%. Calibrating on the last K races
+  before each 2025 race: K=6 81% (mean half-width 20.5 s, on about 40 errors, so noisy), K=10 73%, 14 75%, 20-30 73%.
+  Scaling by race laps: 73%. Not adopted: none of them fixes a bias; the cause is the model (the old-tyre bias, DECISIONS
+  correction above), so it is fixed there and then recalibrated.
+- **Known limits** — The gap interval is measured on pairs of different cars (so it is wider than the uncertainty for one car's
+  own strategies) and only on races without a safety car. Coverage guarantees need exchangeable errors; a new season breaks
+  that, which is exactly what the 2025 test shows. The 2025 errors that now enter the app's calibration were already used
+  for testing; the stated coverage numbers are from before they were added.
+- **What would make us reconsider** — After the model fix (step 3): re-run `build_calibration.py`; if race-total coverage
+  reaches about 80% the static interval is enough, if not consider a recency-weighted calibration.

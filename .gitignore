@@ -13,6 +13,7 @@ data/processed/*
 !data/processed/lap_dataset.parquet
 !data/processed/driver_names.json
 !data/processed/neutralisations.json
+!data/processed/calibration.json
 
 # macOS
 .DS_Store

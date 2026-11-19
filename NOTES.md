@@ -493,3 +493,17 @@ Next: you run the runbook (budget alert, then launch), then the clean-browser te
 the README. Then step 2 of the six: calibrated uncertainty.
 
 Still unclear: the first x86 build on the server (my laptop is arm64); whether to add HTTPS with a domain.
+
+## 2026-11-19 Session 37 (calibrated intervals)
+
+Done: conformal.py (corrected quantile, coverage, rolling coverage; hand-calculated tests), build_calibration.py ->
+data/processed/calibration.json, intervals in the app (race total, gap column) and the README coverage table.
+Lap times are calibrated (79% of 2025 laps at 80% nominal). Race totals are not (71% static, 73% rolling): 2025 is biased
+(+4.8 s mean error vs +1.0), so a recent-races window or per-race updating can't fix it; the fix is the model (step 3).
+Gap intervals over-cover (88-89%) because they are measured on pairs of different cars.
+
+Next: step 3, the two model leads (first stints predicted 0.12-0.17 s/lap too fast; old tyres over-penalised), tested on
+2023/24 cross-year only; then re-run build_calibration.py.
+
+Still unclear: whether race-total coverage recovers once the 2025 bias is fixed. The calibration.json half-widths now include
+2025 errors; the coverage numbers quoted are from before they were added.

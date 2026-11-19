@@ -1,0 +1,67 @@
+{
+ "level": 0.8,
+ "unit": "seconds",
+ "test_year": 2025,
+ "calibration_years": [
+  2023,
+  2024
+ ],
+ "targets": {
+  "lap": {
+   "level": 0.8,
+   "half_width": 0.8671692473351806,
+   "n_calibration": 44334,
+   "static": {
+    "half_width": 0.8538365421727021,
+    "coverage": 0.7852177298259274
+   },
+   "rolling": {
+    "coverage": 0.7905010844780602,
+    "mean_half_width": 0.8657484907499768
+   },
+   "n_test": 17981
+  },
+  "race_total": {
+   "level": 0.8,
+   "half_width": 17.201170755392923,
+   "n_calibration": 262,
+   "static": {
+    "half_width": 16.044099776461735,
+    "coverage": 0.7108433734939759
+   },
+   "rolling": {
+    "coverage": 0.7349397590361446,
+    "mean_half_width": 17.15913674034968
+   },
+   "n_test": 83
+  },
+  "race_total_safety_car": {
+   "level": 0.8,
+   "half_width": 26.73171280209408,
+   "n_calibration": 312,
+   "static": {
+    "half_width": 33.58242212003461,
+    "coverage": 0.8933333333333333
+   },
+   "rolling": {
+    "coverage": 0.8933333333333333,
+    "mean_half_width": 30.38193818301481
+   },
+   "n_test": 150
+  },
+  "gap": {
+   "level": 0.8,
+   "half_width": 15.894776802005708,
+   "n_calibration": 1406,
+   "static": {
+    "half_width": 17.062117901369675,
+    "coverage": 0.8898876404494382
+   },
+   "rolling": {
+    "coverage": 0.8808988764044944,
+    "mean_half_width": 16.55656629403939
+   },
+   "n_test": 445
+  }
+ }
+}

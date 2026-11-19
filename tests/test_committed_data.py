@@ -19,7 +19,7 @@ def deployed():
 
 
 def test_the_three_files_the_app_needs_are_there():
-    for name in ("lap_dataset.parquet", "driver_names.json", "neutralisations.json"):
+    for name in ("lap_dataset.parquet", "driver_names.json", "neutralisations.json", "calibration.json"):
         assert (PROCESSED / name).stat().st_size > 1000, f"{name} is missing or empty: a fresh clone couldn't run the app"
 
 
@@ -43,3 +43,14 @@ def test_the_app_path_runs_on_the_committed_data(deployed):
 
     assert len(races) >= 40
     assert abs(result["model_error"]) < 120 and len(result["ranking"]) >= 5
+
+
+def test_the_committed_calibration_has_every_interval_the_app_shows():
+    from pitwall.conformal import load_calibration
+    calibration = load_calibration(PROCESSED / "calibration.json")
+
+    assert calibration["level"] == 0.8
+    for target in ("lap", "race_total", "race_total_safety_car", "gap"):
+        t = calibration["targets"][target]
+        assert t["half_width"] > 0 and t["n_calibration"] >= 100
+        assert 0 <= t["rolling"]["coverage"] <= 1 and 0 <= t["static"]["coverage"] <= 1

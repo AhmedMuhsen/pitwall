@@ -203,6 +203,26 @@ Replaying the lap times is what matters. The cheaper stops are a small gain (the
 leave 11 unchanged). Race totals in these races are less accurate than in normal ones, and the strategy-gap
 checks above were not repeated for them.
 
+**Prediction intervals with measured coverage** (split conformal prediction, 80% nominal; `src/pitwall/conformal.py`). An
+interval is the prediction plus or minus the 80th percentile of the model's absolute error on races it hadn't seen. The
+test is whether it then covers 80% of the real values in 2025, which the calibration never saw ("calibrated once"), and
+when the calibration is updated after every 2025 race in date order ("race by race"):
+
+| Interval for | Half-width | Errors it is calibrated on | 2025 coverage, once | 2025 coverage, race by race |
+|---|---:|---:|---:|---:|
+| A clean lap time | ±0.87 s | 44,334 laps | 79% | 79% |
+| A race total, no safety car | ±17.2 s | 262 driver-races | **71%** | **73%** |
+| A race total, safety car | ±26.7 s | 312 driver-races | 89% | 89% |
+| The gap between two real cars (second half) | ±15.9 s | 1,406 pairs | 89% | 88% |
+
+Lap times are well calibrated. Race totals are not: they cover 73%, not 80%. The reason is a shift between seasons, not
+the method: 2025 race totals were predicted about 5 s too slow on average (mean error +4.8 s, against +1.0 s in
+2023/24), the same old-tyre bias described above. Calibrating on only the most recent races didn't fix it robustly
+(windows of 10 to 30 races: 73-75%; a 6-race window reached 81% but only by widening to ±20 s on about 40 errors), so the
+real fix is in the model. The gap interval is conservative (it covers more than 80%) because the pairs also differ in
+pace and traffic; for one car the stint-level error (about 5 s) is the better guide. The app shows each interval next to
+its measured coverage.
+
 **The verdict** combines two things. The best alternative's gap must exceed the model's typical stint error
 (5.3 s). And the alternative must stay faster when the model, pit loss and traffic penalty are refitted on 20
 different random 80% subsets of the training races: in 90% or more of them for "prefers", 70% or more for
@@ -231,6 +251,8 @@ depends on which races the model saw; it is not the probability that the alterna
 - **Traffic** is a simple replay of the real field with a penalty close behind another car. There is no
   overtaking logic, the other cars never react, and the training laps that were run in traffic are not removed
   (the penalty is relative to an average lap).
+- **Race-total intervals under-cover on a new season** (73% against 80% nominal in 2025); they will be recalibrated
+  after the model is improved.
 - **Strategy gaps are not validated against the same car on two strategies**: no such data exists. The checks
   use pairs of different cars (second half only) and a car's own stints (whole race).
 - **Track evolution** is folded into the race-fraction term; it cannot be separated from fuel burn, and the term

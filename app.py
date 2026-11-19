@@ -16,11 +16,13 @@ import streamlit as st
 from pitwall.comparison import (STINT_ERROR_FLOOR, TRAIN_YEARS, comparable_races, compare_driver, cumulative_gap, custom_strategy,
                                 driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names,
                                 race_session_key, race_settings, verdict)
+from pitwall.conformal import load_calibration
 from pitwall.neutralisation import load_neutralisations
 
 DATASET_PATH = Path(__file__).parent / "data" / "processed" / "lap_dataset.parquet"
 NAMES_PATH = Path(__file__).parent / "data" / "processed" / "driver_names.json"
 NEUTRALISATIONS_PATH = Path(__file__).parent / "data" / "processed" / "neutralisations.json"
+CALIBRATION_PATH = Path(__file__).parent / "data" / "processed" / "calibration.json"
 BASELINE = "actual"
 REFITS = 20        # refits of the model on random 80% subsets of the training races, for the verdict
 COLOURS = {"faster in every scenario": "#2e7d32", "depends on assumptions": "#8a8a8a",
@@ -33,7 +35,8 @@ def load():
     """Dataset rows, the fitted inputs and driver names, built once per server (about 5 s on a laptop)."""
     rows = load_dataset(DATASET_PATH)
     windows = load_neutralisations(NEUTRALISATIONS_PATH)
-    return rows, fit_inputs(rows, TRAIN_YEARS, windows, refits=REFITS), load_driver_names(NAMES_PATH)
+    return (rows, fit_inputs(rows, TRAIN_YEARS, windows, refits=REFITS), load_driver_names(NAMES_PATH),
+            load_calibration(CALIBRATION_PATH))
 
 
 def plain(strategy: dict) -> str:
@@ -53,6 +56,18 @@ def race_clock(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:04.1f}"
 
 
+def interval_text(calibration: dict | None, target: str, value: float | None = None) -> str:
+    """'80% interval: 1:38:05 to 1:38:40 (+-17 s). Covered 73% of 2025 race totals.' (empty if there is no calibration)."""
+    if not calibration or target not in calibration["targets"]:
+        return ""
+    t, level = calibration["targets"][target], calibration["level"]
+    span = f"{level:.0%} interval: ±{t['half_width']:.1f} s"
+    if value is not None:
+        span = f"{level:.0%} interval: {race_clock(value - t['half_width'])} to {race_clock(value + t['half_width'])} (±{t['half_width']:.0f} s)"
+    return (f"{span}. Calibrated on {t['n_calibration']} errors; on {calibration['test_year']} races it covered "
+            f"{t['rolling']['coverage']:.0%} of real values when updated race by race (target {level:.0%}).")
+
+
 def verdict_box(colour: str, headline: str, body: str) -> None:
     st.markdown(
         f"<div style='border-left: 6px solid {colour}; background: {colour}1f; padding: 0.9rem 1.2rem; "
@@ -70,7 +85,7 @@ st.caption(f"Estimates from a lap-time model fitted on {TRAIN_YEARS[0]}–{TRAIN
            "(OpenF1 timing data). A learning project, not affiliated with Formula 1, the FIA or FOM.")
 
 try:
-    rows, inputs, driver_names = load()
+    rows, inputs, driver_names, calibration = load()
 except FileNotFoundError:
     st.error(f"Dataset not found at {DATASET_PATH}. Build it first: "
              "`uv run python scripts/fetch_races.py` then `uv run python scripts/build_dataset.py`.")
@@ -228,6 +243,10 @@ with left:
         st.metric("Real race time", race_clock(result["actual_time"]))
         st.metric("Model, same strategy", race_clock(result["simulated_actual"]),
                   delta=f"{result['model_error']:+.1f} s vs real", delta_color="off")
+        interval = interval_text(calibration, "race_total_safety_car" if result["neutralisation_windows"] else "race_total",
+                                 result["simulated_actual"])
+        if interval:
+            st.caption(interval)
         st.caption("Across races without a safety car the model's race total was off by about 10 s on average "
                    "(about 17 s on the 22 races with one). "
                    "Much of that error is shared by every strategy in a race, so the gaps above are more "
@@ -270,6 +289,7 @@ with st.expander("How to read this page"):
    older tyres.
 """)
 
+gap_calibration = (calibration or {}).get("targets", {}).get("gap")
 with st.expander("All numbers"):
     st.dataframe(pd.DataFrame([{
         "strategy": names[g["strategy"]] + (" (real)" if g["strategy"] == BASELINE else ""),
@@ -279,13 +299,27 @@ with st.expander("All numbers"):
         "worst case (s)": round(g["max_gap"], 1),
         "faster in refits": "" if g["p_faster"] is None else f"{round(g['p_faster'] * g['refits'])} of {g['refits']}",
         "verdict": g["confidence"],
+        **({} if gap_calibration is None or g["strategy"] == BASELINE else {
+            "80% interval for the gap (s)": f"{g['gap'] - gap_calibration['half_width']:+.0f} to "
+                                            f"{g['gap'] + gap_calibration['half_width']:+.0f}"}),
     } for g in ranges]), hide_index=True, width="stretch")
+    if gap_calibration:
+        st.caption(f"The interval for a gap is ±{gap_calibration['half_width']:.0f} s, measured on gaps between two different real "
+                   f"cars in the second half of the race (it covered {gap_calibration['rolling']['coverage']:.0%} of "
+                   f"{calibration['test_year']} gaps, target {calibration['level']:.0%}). That is wider than the uncertainty "
+                   "for one car's own strategies, because two cars also differ in pace and traffic; for one car the model's "
+                   f"typical error on a single stint is about {STINT_ERROR_FLOOR:.0f} s. Treat it as a cautious bound. "
+                   "It was measured on races without a safety car.")
     for row in result["ranking"]:
         for flag in row["flags"]:
             st.caption(f"⚠ {names[row['strategy']]}: {flag}")
         if row["error"]:
             st.caption(f"✘ {row['strategy']} can't be simulated: {row['error']}")
 
+lap_calibration = (calibration or {}).get("targets", {}).get("lap")
+LAP_INTERVAL_TEXT = (f"A clean lap time is within ±{lap_calibration['half_width']:.2f} s for about {calibration['level']:.0%} of laps "
+                     f"(it covered {lap_calibration['rolling']['coverage']:.0%} of {calibration['test_year']} laps)."
+                     if lap_calibration else "")
 sc_cost = inputs["sc_pit_loss"]
 SC_STOP_TEXT = f"about {sc_cost['ratio']:.0%} (measured on {sc_cost['n']} real stops in {TRAIN_YEARS[0]}-{TRAIN_YEARS[-1]})" if sc_cost else "the normal amount"
 with st.expander("Assumptions and limitations"):
@@ -314,6 +348,6 @@ with st.expander("Assumptions and limitations"):
 - **Accuracy:** on 2025 races (never used to build the model) the lap-time error is 0.60 s per clean
   lap, against 0.82 s for always predicting the driver's normal lap. Race totals for real
   strategies were off by about 10 s on average in the backtest. Each stint predicted from the same
-  car's other stints is off by a median of about 5 s.
+  car's other stints is off by a median of about 5 s. {LAP_INTERVAL_TEXT}
 - This compares a small fixed set of strategies under a model. It does not find an optimal strategy.
 """)

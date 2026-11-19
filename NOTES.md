@@ -463,3 +463,20 @@ commit data/processed?
 
 Still unclear: SC stop discount rests on 14 stops at one circuit. Verdict thresholds were measured on
 races without a safety car.
+
+## 2026-11-18 Session 34 (whole-race validation and the 2023-2025 corpus)
+
+Done: you were right that the second-half pair check can't validate whole-race strategy. Added the leave-one-stint-out
+check (`stint_holdout_errors`: stint-total error 7.7 s cross-year, 8.2 s on 2025, vs 25.6 / 29.5 s with no tyre or fuel
+effect) and replaced the 3 s / 10 s verdict tiers with a floor (5.3 s) plus a refit ensemble (20 refits on 80% of the
+races). Corpus: OpenF1 has no 2022; 70 races in 2023-2025, 57 usable (8 red flag, 8 wet), 50 offered in the app.
+Fixed three safety-car parsing cases (finish under SC, VSC upgraded to SC, mass pit stop). Re-ran every check: 2025
+clean MAE 0.599 vs 0.816; backtest 9.75 s; safety-car races 162 -> 17 s.
+Found: first stints are predicted 0.12-0.17 s/lap too fast, and the old-tyre bias is in 2023/24 too (+0.19 at 30+),
+which corrects my earlier "2025 effect" note.
+
+Next: decide whether to act on the two leads (a non-linear fuel or wear term, tested on 2023/24 cross-year only);
+EC2 vs container; commit the data files so a fresh clone can run the app.
+
+Still unclear: nothing here tests the same car on two strategies. The verdict floor and refit thresholds (70% / 90%)
+are judgment calls. Not committed.

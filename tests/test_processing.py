@@ -365,3 +365,52 @@ def test_build_driver_names_rejects_duplicate_number():
     from pitwall.processing import build_driver_names
     with pytest.raises(ValueError, match="twice"):
         build_driver_names([{"driver_number": 1}, {"driver_number": 1}])
+
+
+
+def flag(kind, date):
+    return {"category": "Flag", "flag": kind, "date": date}
+
+
+def test_race_exclusion_reasons_dry_race_is_usable():
+    stints = [{"compound": "SOFT"}, {"compound": "HARD"}]
+    control = [flag("GREEN", "2024-01-01T13:00:00+00:00"), flag("CHEQUERED", "2024-01-01T14:30:00+00:00")]
+
+    from pitwall.processing import race_exclusion_reasons
+    assert race_exclusion_reasons(stints, control) == []
+
+
+def test_race_exclusion_reasons_wet_tyres_and_red_flag():
+    from pitwall.processing import race_exclusion_reasons
+    control = [flag("RED", "2024-01-01T13:30:00+00:00"), flag("CHEQUERED", "2024-01-01T14:30:00+00:00")]
+
+    assert race_exclusion_reasons([{"compound": "SOFT"}, {"compound": "INTERMEDIATE"}], control[1:]) == ["wet_tyres"]
+    assert race_exclusion_reasons([{"compound": "WET"}], control[1:]) == ["wet_tyres"]
+    assert race_exclusion_reasons([{"compound": "SOFT"}], control) == ["red_flag"]
+    assert race_exclusion_reasons([{"compound": "SOFT"}, {"compound": "WET"}], control) == ["red_flag", "wet_tyres"]
+
+
+def test_race_exclusion_reasons_red_flag_after_the_chequered_flag_does_not_count():
+    from pitwall.processing import race_exclusion_reasons
+    control = [flag("CHEQUERED", "2024-01-01T14:30:00+00:00"), flag("RED", "2024-01-01T14:37:00+00:00")]
+
+    assert race_exclusion_reasons([{"compound": "SOFT"}], control) == []
+
+
+def test_race_exclusion_reasons_no_chequered_flag_counts_every_red_flag_and_missing_data_is_refused():
+    from pitwall.processing import race_exclusion_reasons
+
+    assert race_exclusion_reasons([{"compound": "SOFT"}], [flag("RED", "2024-01-01T14:37:00+00:00")]) == ["red_flag"]
+    assert race_exclusion_reasons([], [flag("GREEN", "2024-01-01T13:00:00+00:00")]) == ["no_data"]
+    assert race_exclusion_reasons([{"compound": "SOFT"}], []) == ["no_data"]
+
+
+
+def test_find_safety_car_disruption_laps_race_finishing_under_the_safety_car():
+    from pitwall.processing import find_safety_car_disruption_laps
+    control = [{"category": "SafetyCar", "message": "SAFETY CAR DEPLOYED", "lap_number": 67, "flag": None},
+               {"category": "Flag", "message": "CHEQUERED FLAG", "lap_number": 70, "flag": "CHEQUERED"}]
+
+    assert find_safety_car_disruption_laps(control) == {66, 67, 68, 69, 70, 71}
+    with pytest.raises(ValueError, match="no end message"):
+        find_safety_car_disruption_laps(control[:1])

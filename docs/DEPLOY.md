@@ -12,7 +12,7 @@ small monthly amount you are happy to lose, and email alerts at 80% and 100% of 
 
 ## 1. The app needs three small files that are not in git
 
-`app.py` reads `data/processed/lap_dataset.parquet` (about 300 KB) and optionally
+`app.py` reads `data/processed/lap_dataset.parquet` (about 1 MB) and optionally
 `data/processed/driver_names.json` and `data/processed/neutralisations.json` (without the last one,
 the four races with a safety car are hidden). `.gitignore` excludes `data/processed/*`, so a fresh clone cannot
 run the app. Options:
@@ -20,10 +20,10 @@ run the app. Options:
 | | How | Trade-off |
 |---|---|---|
 | **A (recommended)** | Add `!data/processed/lap_dataset.parquet`, `!data/processed/driver_names.json` and `!data/processed/neutralisations.json` under `data/processed/*` in `.gitignore` and commit the three files | Tiny, reproducible, works on every host. The files are derived from public OpenF1 data; mention OpenF1 in the README (done) |
-| B | Build on the server: `fetch_races.py`, `build_dataset.py`, `build_driver_names.py`, `build_neutralisations.py` | About 75 API requests at 3 s each, depends on the API being up at deploy time |
+| B | Build on the server (about 350 API requests, ~20 minutes): `fetch_races.py`, `build_dataset.py`, `build_driver_names.py`, `build_neutralisations.py` | Slow, and depends on the API being up at deploy time |
 | C | `scp` the three files to the server | Manual; easy to forget on redeploy |
 
-Raw API responses (`data/raw/`, 12 MB) stay out of git.
+Raw API responses (`data/raw/`, about 46 MB) stay out of git.
 
 ## 2. Hosting options
 

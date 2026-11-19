@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from pitwall.backtest import (actual_strategy, backtest_race, error_components, second_half_record,
-                              strategy_pair_errors)
+                              stint_holdout_errors, strategy_pair_errors)
 
 
 class StubModel:
@@ -196,3 +196,46 @@ def test_strategy_pair_errors_hand_example():
     assert first["predicted"] == pytest.approx(-1.0)
     assert first["error"] == pytest.approx(-4.0)
     assert first["stops_only"] == pytest.approx(20.0)
+
+
+def stint_lap(lap, duration, stint, age, clean=True):
+    return {**half_lap(lap, duration, stint, "MEDIUM", age, clean), "lap_duration": duration}
+
+
+# 4 laps, two stints. Model deltas (0.1 * age + race_fraction): lap 1 0.25, lap 2 0.6, lap 3 0.75, lap 4 1.1.
+TWO_STINTS = [stint_lap(1, 100.0, 1, 0), stint_lap(2, 100.0, 1, 1), stint_lap(3, 99.0, 2, 0), stint_lap(4, 99.0, 2, 1)]
+
+
+def test_stint_holdout_errors_hand_example():
+    result = stint_holdout_errors(TWO_STINTS, StubModel(), min_laps=2)
+
+    first, last = result
+    assert (first["position"], last["position"], first["n_stints"]) == ("first", "last", 2)
+    # Stint 1 from stint 2: adjusted laps 98.25 and 97.9 -> pace 98.075; predicted 98.325 and 98.675
+    # against 100.0 and 100.0 -> errors -1.675 and -1.325.
+    assert first["error_total"] == pytest.approx(-3.0)
+    assert first["error_per_lap"] == pytest.approx(-1.5)
+    assert first["flat_total"] == pytest.approx(-2.0)            # the other stint's median lap is 99.0
+    # Stint 2 from stint 1: adjusted laps 99.75 and 99.4 -> pace 99.575; predicted 100.325 and 100.675 vs 99.0.
+    assert last["error_total"] == pytest.approx(3.0)
+    assert last["flat_total"] == pytest.approx(2.0)
+
+
+def test_stint_holdout_errors_takes_traffic_out_of_the_pace_and_adds_it_back():
+    # Laps 3 and 4 carry a 1.0 s traffic penalty: stint 2's adjusted laps become 97.25 and 96.9, so the pace
+    # for stint 1 is 97.075 and its predicted laps are 97.325 and 97.675 (no penalty on laps 1-2).
+    result = stint_holdout_errors(TWO_STINTS, StubModel(), min_laps=2, penalties={3: 1.0, 4: 1.0})
+
+    assert result[0]["error_total"] == pytest.approx(-5.0)
+
+
+def test_stint_holdout_errors_needs_two_usable_stints():
+    one_stint = [stint_lap(lap, 100.0, 1, lap - 1) for lap in (1, 2, 3, 4)]
+    short_second = [stint_lap(1, 100.0, 1, 0), stint_lap(2, 100.0, 1, 1), stint_lap(3, 99.0, 2, 0)]
+    unclean = [stint_lap(1, 100.0, 1, 0), stint_lap(2, 100.0, 1, 1), stint_lap(3, 99.0, 2, 0, clean=False),
+               stint_lap(4, 99.0, 2, 1, clean=False)]
+
+    assert stint_holdout_errors(one_stint, StubModel(), min_laps=2) == []
+    assert stint_holdout_errors(short_second, StubModel(), min_laps=2) == []     # stint 2 has one clean lap
+    assert stint_holdout_errors(unclean, StubModel(), min_laps=2) == []
+    assert stint_holdout_errors([], StubModel()) == []

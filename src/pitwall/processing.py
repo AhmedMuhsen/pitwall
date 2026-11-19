@@ -67,6 +67,7 @@ def find_safety_car_disruption_laps(race_control: list[dict]) -> set:
     '''
     Takes in race_control as a list of dicts.
     Returns the laps affected by the safety car (with a buffer of 1 lap before and 1 after) as a set.
+    A safety car still out at the chequered flag lasts until that lap.
     '''
 
     affected_laps = set()
@@ -82,7 +83,13 @@ def find_safety_car_disruption_laps(race_control: list[dict]) -> set:
                 affected_laps.add(i)
             start_lap = None
     if start_lap is not None:
-        raise ValueError(f'Safety car on {start_lap} has no end message')
+        # A race can finish under the safety car: no "in this lap" message, the chequered flag ends it.
+        chequered = [r['lap_number'] for r in race_control
+                     if r['category'] == 'Flag' and r['flag'] == 'CHEQUERED' and r['lap_number'] is not None]
+        if not chequered:
+            raise ValueError(f'Safety car on {start_lap} has no end message')
+        for i in range(start_lap - 1, max(chequered) + 2):
+            affected_laps.add(i)
     return affected_laps
 
 def exclusion_reasons(lap: dict, stints: list[dict], laps: list[dict], safety_car_laps: set) -> list[str]:
@@ -298,3 +305,34 @@ def build_driver_names(records: list[dict]) -> dict[int, dict]:
         names[number] = {"acronym": record.get("name_acronym") or None, "name": full or None,
                          "team": record.get("team_name") or None}
     return names
+
+
+WET_COMPOUNDS = {"INTERMEDIATE", "WET"}
+
+
+def race_exclusion_reasons(stints: list[dict], race_control: list[dict]) -> list[str]:
+    '''
+    Why a whole race can't go in the dataset (empty if it can).
+
+    stints: OpenF1 /stints records of the race, each with "compound"
+    race_control: OpenF1 /race_control records of the race, each with "category", "flag" and "date"
+
+    returns: list of reasons, any of
+        "no_data": no stints or no race_control messages were returned
+        "wet_tyres": any car ran an intermediate or wet tyre (the simulator is dry-only, and a
+            mixed-condition race can't be told from a dry one by lap time alone)
+        "red_flag": a red flag was shown before the chequered flag (a red flag allows a free
+            tyre change and a standing restart, which the simulator doesn't model); one shown
+            after the chequered flag (pit-lane closure) doesn't count
+    '''
+    if not stints or not race_control:
+        return ["no_data"]
+    reasons = []
+    flags = [r for r in race_control if r["category"] == "Flag"]
+    chequered = [r["date"] for r in flags if r["flag"] == "CHEQUERED"]
+    end = min(chequered) if chequered else None
+    if any(r["flag"] == "RED" and (end is None or r["date"] < end) for r in flags):
+        reasons.append("red_flag")
+    if any(s["compound"] in WET_COMPOUNDS for s in stints):
+        reasons.append("wet_tyres")
+    return reasons

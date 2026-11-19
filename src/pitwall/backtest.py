@@ -273,7 +273,8 @@ def second_half_record(driver_rows: list[dict], model, race_distance: int, pit_l
 
 def strategy_pair_errors(records: list[dict], same_within: int = 3) -> list[dict]:
     '''
-    Predicted vs real second-half gap between every two cars in the same race
+    Predicted vs real second-half gap (the second half only; it says nothing about first-stint
+    choices) between every two cars in the same race
     that ran different strategies, with each car's own pace taken out.
 
     records: second_half_record results; skipped ones are left out
@@ -310,3 +311,54 @@ def strategy_pair_errors(records: list[dict], same_within: int = 3) -> list[dict
                               "predicted": predicted, "stops_only": (a["stops"] - b["stops"]) * a["pit_loss"],
                               "error": predicted - real})
     return pairs
+
+
+def stint_holdout_errors(driver_rows: list[dict], model, min_laps: int = 5,
+                         penalties: dict[int, float] | None = None) -> list[dict]:
+    '''
+    How well the model predicts each stint of a car from the same car's other stints,
+    across the whole race (first stints included).
+
+    driver_rows: one car's rows in one race, each with "lap_number", "stint_number",
+        "lap_duration", "is_clean", "session_key", "circuit", "year", "driver_number"
+        and the model's inputs ("compound", "circuit", "tyre_age", "race_fraction")
+    model: fitted model, predict(DataFrame) -> delta in seconds, able to predict every
+        compound@circuit pair in driver_rows
+    min_laps: fewest clean laps for a stint to be scored or to help set the pace
+    penalties: optional lap_number -> traffic penalty (traffic.real_lap_penalties)
+
+    returns: one dict per usable stint (at least min_laps clean laps; the car needs two
+    such stints) with "session_key", "circuit", "year", "driver_number", "stint_number",
+    "position" ("first", "middle" or "last" among the usable stints), "n_stints", "laps"
+    (clean laps scored), "error_total" (predicted minus actual stint time, seconds; positive
+    = predicted too slow), "error_per_lap" and "flat_total" (the same error for a prediction
+    with no tyre or fuel effect: the car's median lap in its other stints). The pace for a
+    stint is the median over the other stints' clean laps of lap_duration minus the model's
+    delta (and minus the traffic penalty), so the stint being scored never sets its own pace.
+    The model's error here is what limits any strategy comparison: a strategy changes
+    which tyre age and fuel load each lap runs at.
+    '''
+    clean = pd.DataFrame([r for r in driver_rows if r["is_clean"] and r["stint_number"] is not None
+                          and r["lap_duration"] is not None])
+    if clean.empty:
+        return []
+    clean = clean.assign(predicted=model.predict(clean))
+    clean["penalty"] = clean["lap_number"].map(lambda lap: (penalties or {}).get(lap, 0.0))
+    clean["adjusted"] = clean["lap_duration"] - clean["predicted"] - clean["penalty"]
+    usable = [stint for stint, laps in clean.groupby("stint_number") if len(laps) >= min_laps]
+    if len(usable) < 2:
+        return []
+    records = []
+    for index, stint in enumerate(usable):
+        laps = clean[clean["stint_number"] == stint]
+        others = clean[clean["stint_number"].isin([s for s in usable if s != stint])]
+        pace = float(median(others["adjusted"]))
+        error = pace + laps["predicted"] + laps["penalty"] - laps["lap_duration"]
+        flat = float(median(others["lap_duration"])) - laps["lap_duration"]
+        first = laps.iloc[0]
+        records.append({"session_key": first["session_key"], "circuit": first["circuit"], "year": first["year"],
+                        "driver_number": first["driver_number"], "stint_number": stint,
+                        "position": "first" if index == 0 else "last" if index == len(usable) - 1 else "middle",
+                        "n_stints": len(usable), "laps": len(laps), "error_total": float(error.sum()),
+                        "error_per_lap": float(error.mean()), "flat_total": float(flat.sum())})
+    return records

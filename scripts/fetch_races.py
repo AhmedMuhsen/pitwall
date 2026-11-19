@@ -1,39 +1,36 @@
+"""Caches the OpenF1 data of every Grand Prix in 2023-2025 (the regulation period OpenF1 covers).
+Resumable: cached responses are skipped, so a failed or interrupted run can simply be repeated."""
 import time
-from pitwall.ingestion import cache_path, load_or_fetch
-SESSIONS = {
-    # 2023: training, cross-year validation of per-circuit wear
-    7953: "Bahrain 2023",
-    9133: "Hungary 2023",
-    9157: "Italy (Monza) 2023",
-    9165: "Singapore 2023",
-    9197: "Abu Dhabi 2023",
-    # 2024: training
-    9472: "Bahrain 2024",
-    9566: "Hungary 2024",
-    9590: "Italy (Monza) 2024",
-    9606: "Singapore 2024",
-    9662: "Abu Dhabi 2024",
-    # 2025: test
-    10014: "Bahrain 2025",
-    9928: "Hungary 2025",
-    9912: "Italy (Monza) 2025",
-    9896: "Singapore 2025",
-    9839: "Abu Dhabi 2025",
-}
+import urllib.error
+
+from pitwall.ingestion import cache_path, load_or_fetch, race_sessions
+
 ENDPOINTS_TO_FETCH = ["laps", "stints", "race_control", "weather", "drivers"]
 WAIT_SECONDS = 3
 
+
 def main():
-    requests = 0
-    for (session_key, name) in SESSIONS.items():
+    requests, failures = 0, []
+    races = race_sessions()
+    for race in races:
+        name = f"{race['circuit']} {race['year']}"
         for endpoint in ENDPOINTS_TO_FETCH:
-            was_cached = cache_path(endpoint, session_key).exists()
-            data = load_or_fetch(endpoint, session_key)
-            print(name, endpoint, len(data), "cached" if was_cached else "fetched")
+            was_cached = cache_path(endpoint, race["session_key"]).exists()
+            try:
+                data = load_or_fetch(endpoint, race["session_key"])
+            except (urllib.error.URLError, ValueError) as error:
+                failures.append((name, endpoint, str(error)))
+                print(name, endpoint, "FAILED:", error, flush=True)
+                time.sleep(WAIT_SECONDS)
+                continue
+            print(name, endpoint, len(data), "cached" if was_cached else "fetched", flush=True)
             if not was_cached:
                 requests += 1
-                time.sleep(WAIT_SECONDS) 
-    print(f"Requests made: {requests}")
+                time.sleep(WAIT_SECONDS)
+    print(f"Races: {len(races)}. Requests made: {requests}. Failures: {len(failures)}")
+    for failure in failures:
+        print("  ", failure)
+
 
 if __name__ == "__main__":
     main()

@@ -9,7 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from pitwall.comparison import (TRAIN_YEARS, comparable_races, compare_driver, cumulative_gap, custom_strategy,
+from pitwall.comparison import (STINT_ERROR_FLOOR, TRAIN_YEARS, comparable_races, compare_driver, cumulative_gap, custom_strategy,
                                 driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names,
                                 race_session_key, race_settings, verdict)
 from pitwall.neutralisation import load_neutralisations
@@ -18,6 +18,7 @@ DATASET_PATH = Path(__file__).parent / "data" / "processed" / "lap_dataset.parqu
 NAMES_PATH = Path(__file__).parent / "data" / "processed" / "driver_names.json"
 NEUTRALISATIONS_PATH = Path(__file__).parent / "data" / "processed" / "neutralisations.json"
 BASELINE = "actual"
+REFITS = 20        # refits of the model on random 80% subsets of the training races, for the verdict
 COLOURS = {"faster in every scenario": "#2e7d32", "depends on assumptions": "#8a8a8a",
            "slower in every scenario": "#c62828"}
 VERDICT_COLOURS = {"agrees": "#2e7d32", "too_close": "#8a8a8a", "leans": "#e0a100", "prefers": "#1f6fb2"}
@@ -28,7 +29,7 @@ def load():
     """Dataset rows, the fitted inputs and driver names, built once per server (about 2 s)."""
     rows = load_dataset(DATASET_PATH)
     windows = load_neutralisations(NEUTRALISATIONS_PATH)
-    return rows, fit_inputs(rows, TRAIN_YEARS, windows), load_driver_names(NAMES_PATH)
+    return rows, fit_inputs(rows, TRAIN_YEARS, windows, refits=REFITS), load_driver_names(NAMES_PATH)
 
 
 def plain(strategy: dict) -> str:
@@ -71,7 +72,7 @@ except FileNotFoundError:
              "`uv run python scripts/fetch_races.py` then `uv run python scripts/build_dataset.py`.")
     st.stop()
 
-races = {f"{circuit} {year}": (year, circuit) for year, circuit in comparable_races(rows, inputs["neutralisations"])}
+races = {f"{circuit} {year}": (year, circuit) for year, circuit in comparable_races(rows, inputs["neutralisations"], inputs)}
 year, circuit = races[st.sidebar.selectbox("Race", list(races))]
 st.sidebar.caption("Safety cars are replayed from what really happened in the race.")
 drivers = driver_choices(rows, circuit, year, inputs["model"], windows=inputs["neutralisations"])
@@ -132,7 +133,7 @@ if "1stop_under_SC" in names:
     names["1stop_under_SC"] += " (pit under the safety car)"
 if "custom" in names:
     names["custom"] = "Yours: " + names["custom"]
-ranges = gap_ranges(result["sensitivity"], BASELINE)
+ranges = gap_ranges(result["sensitivity"], BASELINE, refit_gaps=result["refit_gaps"])
 answer = verdict(ranges)
 settings = result["settings"]
 
@@ -152,7 +153,7 @@ if result["neutralisation_windows"]:
             + (f", and a stop under a real safety car costs about {sc_cost['ratio']:.0%} of a normal one "
                f"(measured on {sc_cost['n']} real stops)" if sc_cost else "")
             + ". A stop under a virtual safety car is charged the normal cost: too few were seen to measure a saving. "
-              "Strategy gaps in safety-car races have not been tested the way those in normal races were.")
+              "Race totals in safety-car races are less accurate than in normal ones (about 17 s per car against about 10 s).")
 
 r = answer["range"]
 # The model only knows tyre age and fuel, so it tends to prefer evenly split stints. Say so next to
@@ -164,21 +165,25 @@ if answer["kind"] == "agrees":
     verdict_box(VERDICT_COLOURS["agrees"], "The model agrees with the real strategy.",
                 "None of the alternatives is faster at the best estimate.")
 else:
-    how_sure = {
-        "too_close": ("Too close for the model to call.",
-                      "Under about 3 s the model picked the faster of two real strategies only about half the time "
-                      "in tests, no better than a coin flip."),
-        "leans": (f"The model leans towards a different strategy, by about {-r['gap']:.0f} s.",
-                  "Between 3 and 10 s it picked the faster of two real strategies about 2 times in 3 in tests."),
-        "prefers": (f"The model prefers a different strategy, by about {-r['gap']:.0f} s.",
-                    "Above 10 s it picked the faster of two real strategies more than 4 times in 5 in tests."),
+    refits, faster = r["refits"], round(r["p_faster"] * r["refits"]) if r["p_faster"] is not None else None
+    refit_text = (f"Faster in {faster} of {refits} refits of the model on random 80% subsets of the training races "
+                  "(how much the answer depends on which races the model saw)." if refits else "")
+    headline = {
+        "too_close": "Too close for the model to call.",
+        "leans": f"The model leans towards a different strategy, by about {-r['gap']:.0f} s.",
+        "prefers": f"The model prefers a different strategy, by about {-r['gap']:.0f} s.",
     }[answer["kind"]]
+    why = ""
+    if answer["kind"] == "too_close":
+        why = (f" That gap is within the model's typical error on a single stint (about {STINT_ERROR_FLOOR:.0f} s)."
+               if -r["gap"] < STINT_ERROR_FLOOR else " The answer changes too often when the model sees different races.")
     robust = ("It stays faster across every pit-loss and tyre-wear setting tested."
               if answer["robust"] else
               f"But it is {r['max_gap']:+.1f} s at its worst pit-loss and tyre-wear setting.")
-    verdict_box(VERDICT_COLOURS[answer["kind"]], how_sure[0],
-                f"<b>{names[answer['strategy']]}</b>: {-r['gap']:.1f} s quicker at the best estimate. {robust}"
-                f"<br>{how_sure[1]} (Tests were on pairs of real strategies from 2023-2025.)"
+    verdict_box(VERDICT_COLOURS[answer["kind"]], headline,
+                f"<b>{names[answer['strategy']]}</b>: {-r['gap']:.1f} s quicker at the best estimate. {refit_text}"
+                f"{why}<br>{robust} The model's typical error on one stint is about {STINT_ERROR_FLOOR:.0f} s: each stint "
+                "predicted from the same car's other stints, anywhere in the race."
                 f"<br><span style='opacity: 0.8'>{blind_spot}</span>")
 
 # --- The main chart: each alternative's gap with its range -----------------------------------
@@ -220,7 +225,7 @@ with left:
         st.metric("Model, same strategy", race_clock(result["simulated_actual"]),
                   delta=f"{result['model_error']:+.1f} s vs real", delta_color="off")
         st.caption("Across races without a safety car the model's race total was off by about 10 s on average "
-                   "(about 13 s on the four races with one). "
+                   "(about 17 s on the 22 races with one). "
                    "Much of that error is shared by every strategy in a race, so the gaps above are more "
                    "reliable than the totals. The bars show the part that isn't shared.")
         actual_flags = next(row["flags"] for row in result["ranking"] if row["strategy"] == BASELINE)
@@ -268,6 +273,7 @@ with st.expander("All numbers"):
         "gap, best estimate (s)": round(g["gap"], 1),
         "best case (s)": round(g["min_gap"], 1),
         "worst case (s)": round(g["max_gap"], 1),
+        "faster in refits": "" if g["p_faster"] is None else f"{round(g['p_faster'] * g['refits'])} of {g['refits']}",
         "verdict": g["confidence"],
     } for g in ranges]), hide_index=True, width="stretch")
     for row in result["ranking"]:
@@ -296,11 +302,14 @@ with st.expander("Assumptions and limitations"):
 - **Track evolution** (the track getting faster) is folded into the race-lap (fuel) term.
 - **Pit loss** is per circuit: pit-lane time minus the time to cover the same stretch at racing speed,
   measured in {TRAIN_YEARS[0]}–{TRAIN_YEARS[-1]}.
-- **Old tyres:** on 2025 races, laps on tyres 30+ laps old were about 0.7 s faster than the model
+- **Old tyres:** on 2025 races, laps on tyres 30+ laps old were about 0.5 s faster than the model
   predicts. Long stints may look costlier here than they really are, which favours even stints
   and extra stops.
-- **Accuracy:** on 2025 races (never used to build the model) the lap-time error is 0.61 s per clean
-  lap, against 0.79 s for always predicting the driver's normal lap. Race totals for real
-  strategies were off by about 10 s on average in the backtest.
+- **First stints:** the model predicts heavy-fuel first stints about 0.12-0.17 s per lap too fast (about 3 s
+  over a stint) and later stints about right, so it slightly favours a longer first stint.
+- **Accuracy:** on 2025 races (never used to build the model) the lap-time error is 0.60 s per clean
+  lap, against 0.82 s for always predicting the driver's normal lap. Race totals for real
+  strategies were off by about 10 s on average in the backtest. Each stint predicted from the same
+  car's other stints is off by a median of about 5 s.
 - This compares a small fixed set of strategies under a model. It does not find an optimal strategy.
 """)

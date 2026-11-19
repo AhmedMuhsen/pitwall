@@ -61,12 +61,12 @@ def test_build_neutralisation_hand_example():
     rows = [lap(1, 5, 130.0), lap(2, 5, 120.0), lap(1, 6, 100.0), lap(2, 6, 110.0), lap(1, 7, 90.0)]
     windows = [{"kind": "SC", "start": 5, "end": 5}, {"kind": "VSC", "start": 6, "end": 6}]
 
-    result = build_neutralisation(rows, windows, 0.7)
+    result = build_neutralisation(rows, windows, 0.7, min_cars=1)
 
     assert result == {"lap_times": {5: 125.0, 6: 105.0}, "sc_laps": {5}, "laps": {5, 6},
                       "no_traffic_laps": {4, 5, 6, 7}, "pit_loss_ratio": 0.7}
     with pytest.raises(ValueError, match="neutralised laps"):
-        build_neutralisation(rows, [{"kind": "SC", "start": 8, "end": 8}], None)
+        build_neutralisation(rows, [{"kind": "SC", "start": 8, "end": 8}], None, min_cars=1)
 
 
 def test_apply_neutralisation_replaces_laps_and_discounts_only_stops_under_a_real_safety_car():
@@ -96,7 +96,7 @@ def test_fit_sc_pit_loss_hand_example():
     rows += [lap(2, 6, 132.0, in_lap=True), lap(2, 7, 108.0, out_lap=True)]
     windows = {1: [{"kind": "SC", "start": 5, "end": 6}]}
 
-    result = fit_sc_pit_loss(rows, windows, {"X": {"median": 20.0}}, [2024])
+    result = fit_sc_pit_loss(rows, windows, {"X": {"median": 20.0}}, [2024], min_cars=2)
 
     assert result == {"ratio": pytest.approx(0.875), "q25": pytest.approx(0.8125), "q75": pytest.approx(0.9375), "n": 2}
 
@@ -107,3 +107,46 @@ def test_fit_sc_pit_loss_returns_none_without_stops_under_a_real_safety_car():
     assert fit_sc_pit_loss(rows, {1: [{"kind": "VSC", "start": 5, "end": 6}]}, {"X": {"median": 20.0}}, [2024]) is None
     assert fit_sc_pit_loss(rows, {1: [{"kind": "SC", "start": 5, "end": 6}]}, {"X": {"median": 20.0}}, [2023]) is None
     assert fit_sc_pit_loss(rows, {1: [{"kind": "SC", "start": 5, "end": 6}]}, {}, [2024]) is None
+
+
+def test_neutralised_windows_a_race_that_finishes_under_the_safety_car_ends_on_the_chequered_flag():
+    control = [message("SAFETY CAR DEPLOYED", 67, "2024-01-01T13:00:00+00:00"),
+               {"category": "Flag", "flag": "CHEQUERED", "message": "CHEQUERED FLAG", "lap_number": 70,
+                "date": "2024-01-01T13:10:00+00:00"}]
+
+    assert neutralised_windows(control) == [{"kind": "SC", "start": 67, "end": 70}]
+    with pytest.raises(ValueError, match="no end message"):
+        neutralised_windows(control[:1])      # no chequered flag in the data: still refused
+
+
+def test_neutralised_windows_a_virtual_safety_car_upgraded_to_a_safety_car_ends_there():
+    control = [message("VIRTUAL SAFETY CAR DEPLOYED", 22, "2024-01-01T07:39:16+00:00"),
+               message("SAFETY CAR DEPLOYED", 23, "2024-01-01T07:43:21+00:00"),
+               message("SAFETY CAR IN THIS LAP", 26, "2024-01-01T07:49:36+00:00"),
+               message("SAFETY CAR DEPLOYED", 27, "2024-01-01T07:53:02+00:00"),
+               message("SAFETY CAR THROUGH THE PIT LANE", 28, "2024-01-01T07:55:00+00:00"),
+               message("SAFETY CAR IN THIS LAP", 31, "2024-01-01T08:00:59+00:00"),
+               {"category": "Flag", "flag": "CHEQUERED", "message": "CHEQUERED FLAG", "lap_number": 56,
+                "date": "2024-01-01T08:30:00+00:00"}]
+
+    assert neutralised_windows(control) == [{"kind": "VSC", "start": 22, "end": 23},
+                                            {"kind": "SC", "start": 23, "end": 26},
+                                            {"kind": "SC", "start": 27, "end": 31}]
+
+
+def test_a_lap_needs_enough_cars_for_a_field_lap_time():
+    # Lap 5: cars 1 and 2 on plain laps, car 3 on its in-lap. Lap 6: only car 1 on a plain lap.
+    rows = [lap(1, 5, 130.0), lap(2, 5, 120.0), lap(3, 5, 500.0, in_lap=True), lap(1, 6, 100.0)]
+
+    assert field_lap_times(rows) == {5: 125.0, 6: 100.0}
+    assert field_lap_times(rows, min_cars=2) == {5: 125.0}
+    with pytest.raises(ValueError, match="neutralised laps"):
+        build_neutralisation(rows, [{"kind": "SC", "start": 5, "end": 6}], None)       # default min_cars is 3
+
+
+def test_fit_sc_pit_loss_ignores_stops_on_laps_with_too_few_cars_for_a_field_time():
+    rows = [lap(3, 5, 130.0), lap(3, 6, 120.0), lap(1, 5, 140.0, in_lap=True), lap(1, 6, 125.0, out_lap=True)]
+    windows = {1: [{"kind": "SC", "start": 5, "end": 6}]}
+
+    assert fit_sc_pit_loss(rows, windows, {"X": {"median": 20.0}}, [2024], min_cars=1)["n"] == 1
+    assert fit_sc_pit_loss(rows, windows, {"X": {"median": 20.0}}, [2024]) is None       # only one car ran plain laps

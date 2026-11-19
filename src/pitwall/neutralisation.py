@@ -19,9 +19,12 @@ def neutralised_windows(race_control: list[dict]) -> list[dict]:
 
     returns: list of {"kind": "SC" or "VSC", "start": lap, "end": lap}, earliest first.
     "start" is the lap of the "DEPLOYED" message, "end" the lap of "IN THIS LAP" (safety
-    car) or "ENDING" (virtual); both laps are part of the period.
+    car) or "ENDING" (virtual); both laps are part of the period. A virtual safety car that is
+    upgraded to a safety car ends on the lap the safety car is deployed. A period still out at the
+    chequered flag (the race finished under it) ends on the chequered flag's lap.
 
-    raises ValueError if a period has no start, no end, or a message has no lap number.
+    raises ValueError if a period has no start, no end and no chequered flag follows, or a
+    message has no lap number.
     '''
     events = sorted((r for r in race_control if r["category"] == "SafetyCar"), key=lambda r: r["date"])
     windows, started = [], {}
@@ -34,14 +37,23 @@ def neutralised_windows(race_control: list[dict]) -> list[dict]:
         if "DEPLOYED" in message:
             if kind in started:
                 raise ValueError(f"{kind} deployed on lap {lap} while already out since lap {started[kind]}")
+            if kind == "SC" and "VSC" in started:
+                # A virtual safety car upgraded to a full one has no "ENDING" message of its own.
+                windows.append({"kind": "VSC", "start": started.pop("VSC"), "end": lap})
             started[kind] = lap
         elif "IN THIS LAP" in message or "ENDING" in message:
             if kind not in started:
                 raise ValueError(f"{kind} ended on lap {lap} but was never deployed")
             windows.append({"kind": kind, "start": started.pop(kind), "end": lap})
     if started:
-        kind, lap = next(iter(started.items()))
-        raise ValueError(f"{kind} deployed on lap {lap} has no end message")
+        # A race can finish under the safety car: no end message, the chequered flag ends it.
+        chequered = [r["lap_number"] for r in race_control
+                     if r["category"] == "Flag" and r["flag"] == "CHEQUERED" and r["lap_number"] is not None]
+        if not chequered:
+            kind, lap = next(iter(started.items()))
+            raise ValueError(f"{kind} deployed on lap {lap} has no end message")
+        for kind, lap in started.items():
+            windows.append({"kind": kind, "start": lap, "end": max(chequered)})
     return sorted(windows, key=lambda w: w["start"])
 
 
@@ -60,24 +72,27 @@ def load_neutralisations(path) -> dict[int, list[dict]]:
     return {int(session): windows for session, windows in table.items()}
 
 
-def field_lap_times(race_rows: list[dict]) -> dict[int, float]:
+def field_lap_times(race_rows: list[dict], min_cars: int = 1) -> dict[int, float]:
     '''
     The field's lap time on every lap of one race.
 
     race_rows: dataset rows of one race, each with "lap_number", "lap_duration",
         "is_pit_out_lap" and "exclusion_reasons"
+    min_cars: fewest cars a lap needs to count
     returns: dict lap_number -> median lap_duration over the cars that ran it with a time,
-    leaving out each car's in-lap and out-lap (pit-lane laps). A lap with no such car has no key.
+    leaving out each car's in-lap and out-lap (pit-lane laps). A lap with fewer than min_cars
+    such cars has no key (when every car pits at once there is no field lap time).
     '''
     by_lap = {}
     for row in race_rows:
         if row["lap_duration"] is None or row["is_pit_out_lap"] or "in_lap" in row["exclusion_reasons"]:
             continue
         by_lap.setdefault(row["lap_number"], []).append(row["lap_duration"])
-    return {lap: float(median(times)) for lap, times in by_lap.items()}
+    return {lap: float(median(times)) for lap, times in by_lap.items() if len(times) >= min_cars}
 
 
-def build_neutralisation(race_rows: list[dict], windows: list[dict], pit_loss_ratio: float | None) -> dict:
+def build_neutralisation(race_rows: list[dict], windows: list[dict], pit_loss_ratio: float | None,
+                         min_cars: int = 3) -> dict:
     '''
     Everything the simulator needs to replay a race's safety cars.
 
@@ -85,6 +100,7 @@ def build_neutralisation(race_rows: list[dict], windows: list[dict], pit_loss_ra
     windows: neutralised_windows of the race
     pit_loss_ratio: stop loss under a real safety car as a share of the normal pit loss
         (fit_sc_pit_loss), or None to charge the normal pit loss
+    min_cars: fewest cars a neutralised lap needs for a field lap time (field_lap_times)
 
     returns: dict with "lap_times" (lap -> the field's real lap time, for every lap in a
     window), "sc_laps" (laps under a real safety car; a stop whose in-lap is one of these
@@ -92,9 +108,10 @@ def build_neutralisation(race_rows: list[dict], windows: list[dict], pit_loss_ra
     before and after each window: the field is bunched there, outside what the traffic
     penalty was estimated on) and "pit_loss_ratio".
 
-    raises ValueError if a neutralised lap has no field lap time.
+    raises ValueError if a neutralised lap has no field lap time (fewer than min_cars cars ran a
+    plain lap, e.g. everyone pitted together under the safety car).
     '''
-    times = field_lap_times(race_rows)
+    times = field_lap_times(race_rows, min_cars)
     laps = {lap for w in windows for lap in range(w["start"], w["end"] + 1)}
     missing = sorted(lap for lap in laps if lap not in times)
     if missing:
@@ -134,7 +151,7 @@ def apply_neutralisation(laps: pd.DataFrame, pit_laps: list[int], pit_loss: floa
 
 
 def fit_sc_pit_loss(rows: list[dict], windows_by_session: dict[int, list[dict]],
-                    pit_loss: dict[str, dict], years: list[int]) -> dict | None:
+                    pit_loss: dict[str, dict], years: list[int], min_cars: int = 3) -> dict | None:
     '''
     How much cheaper a stop is under a real safety car, from the stops really made.
 
@@ -142,6 +159,8 @@ def fit_sc_pit_loss(rows: list[dict], windows_by_session: dict[int, list[dict]],
     windows_by_session: load_neutralisations result
     pit_loss: analysis.pit_loss_by_circuit result (the normal pit loss per circuit)
     years: the training years; only their races are used
+    min_cars: fewest cars a lap needs for a field lap time (the same rule the replay uses, so a stop
+        isn't compared with the lap time of one or two cars when everyone pits together)
 
     returns: dict with "ratio" (median), "q25", "q75" and "n" (stops), or None if no stop
     was made under a real safety car in those years. A stop's loss is the in-lap plus
@@ -157,7 +176,7 @@ def fit_sc_pit_loss(rows: list[dict], windows_by_session: dict[int, list[dict]],
         circuit = race[0]["circuit"]
         if circuit not in pit_loss:
             continue
-        field = field_lap_times(race)
+        field = field_lap_times(race, min_cars)
         sc_laps = {lap for w in windows_by_session[session] if w["kind"] == "SC"
                    for lap in range(w["start"], w["end"] + 1)}
         laps = {(r["driver_number"], r["lap_number"]): r["lap_duration"] for r in race if r["lap_duration"] is not None}

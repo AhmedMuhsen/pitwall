@@ -818,3 +818,82 @@ One entry per real decision. Format:
   races (too few cars), so the verdict thresholds come from races without a safety car; the app says so.
 - **What would make us reconsider** — More races with a safety car showing a different stop discount,
   or a circuit whose neutralised laps are poorly represented by the field median.
+
+## 2026-11-18 — The corpus is every usable 2023-2025 race (57 of 70), not 15
+
+- **Decision** — The dataset is built from every Grand Prix OpenF1 lists for 2023-2025 (`ingestion.race_sessions`,
+  from the cached sessions files; the cancelled 2023 Emilia Romagna GP is dropped), minus races the simulator
+  can't represent: a red flag before the chequered flag (8), any intermediate or wet tyre (8; 3 are both), or more
+  than 5% of laps with no stint data (none). 57 races, 62,959 laps, 24 circuits. Every race and its reason is in
+  `docs/RACE_SELECTION.md`. Training stays 2023+2024 (36 races); 2025 (21) is the held-out test.
+- **Requirement** — A larger training corpus, including safety-car races; stay inside the 2022-2025 regulation
+  period. CLAUDE.md's "dry, non-sprint, 8-10 races" was written for hand-built v1.
+- **Options** — 2023-2025 from OpenF1 only; add 2022 via FastF1 (new dependency, second source and schema, ~22
+  races); keep the 15 races. Filters: all dry races without red flags (chosen); also drop sprint weekends;
+  include everything.
+- **Choice and reason** — 2023-2025 only (OpenF1 has no 2022: `sessions?year=2022` returns "No results found").
+  Sprint weekends stay in: the dataset only holds the Grand Prix itself, so the sprint format doesn't enter the
+  laps. Wet and red-flag races stay out: the simulator is dry-only and has no free tyre change or standing restart.
+- **Data fixes this needed** — A safety car still out at the chequered flag has no end message (Melbourne 2024,
+  Baku 2024, Montreal 2025): it now ends on the chequered flag's lap in both parsers. A virtual safety car
+  upgraded to a safety car has no "ENDING" message (Shanghai 2024, Lusail 2024): it ends when the safety car is
+  deployed. A neutralised lap needs at least 3 cars on plain laps for a field lap time (Spielberg 2023 and 3 more
+  races have every car pitting together): those 5 races are not offered in the app. A circuit whose lap 1 was
+  under a safety car in every training race gets the all-circuit median lap-1 loss (7.7 s), as the cross-year
+  backtest always did. Races at circuits with no training race are hidden (Interlagos 2025, Monte Carlo 2025).
+  50 of the 57 are offered.
+- **Checked on the larger corpus** — The model choice does not change: cross-year clean-lap MAE B_frac 0.557,
+  P_1e4 0.568, P_1e5 0.558, P_1e6 0.556, free per-circuit wear 0.623 s; race totals 11.7 / 11.3 / 11.6 / 11.7 /
+  18.0 s. P_1e5 stays (rule 3; DECISIONS 2026-11-17). On the 2025 test it is marginally behind B_frac (0.599 vs
+  0.586 s), which is not "clearly worse".
+- **What would make us reconsider** — A 2022 source worth a new dependency, or more seasons arriving.
+
+## 2026-11-18 — Whole-race validation: leave-one-stint-out, and a verdict from refits (supersedes the 3 s / 10 s tiers)
+
+- **Decision** — (1) The strategy-pair check is relabelled "second half only". (2) New check: predict each stint
+  from the same car's other stints (`backtest.stint_holdout_errors`), over the whole race. (3) The verdict no
+  longer uses fixed 3 s and 10 s tiers. A gap must exceed `STINT_ERROR_FLOOR` (the median stint-total error, 5.3 s)
+  and the alternative must be faster in at least 70% ("leans") or 90% ("prefers") of 20 refits of the model, pit
+  loss, traffic and safety-car stop ratio on random 80% subsets of the training races (fixed seed; every compound@circuit
+  pair kept).
+- **Requirement** — Strategy spans the whole race. The pair check took each car's pace from its first half and
+  scored only the second half, so it could not test first-stint choices, and the thresholds read off it rested on
+  half the evidence.
+- **Options** — Stint check + refit verdict (chosen); stint check + teammate pairs (tried: 20 pairs in 7 races,
+  median real gap 17.6 s, pace differences swamp the signal); relabel only.
+- **Choice and reason** — Within-car, within-race variation is the only way to separate pace from strategy
+  across the whole race. Stint-total error: 7.7 s (median 5.3) cross-year over 1,318 stints, 8.2 s (median 5.6)
+  on 2025's 801, against 25.6 / 29.5 s with no tyre or fuel effect. The pair check on the larger corpus agrees
+  with the 5.3 s floor: under 5 s predicted gap the faster car is picked 45-60% of the time, 71-75% at 5-10 s,
+  85-99% above 10 s. Refits measure how much a comparison depends on which races the model saw (20 refits take
+  about 2 s per page and 5 s at startup); they are not a probability that the alternative really is faster.
+- **Known limits** — The floor and the refits both understate model misspecification the stint check can't see
+  (undercuts, tyre allocation). The thresholds 70% and 90% are judgment calls.
+- **What would make us reconsider** — A same-car-two-strategies data source, or the floor moving by more than
+  about 1 s when the corpus grows (update `STINT_ERROR_FLOOR`).
+
+## 2026-11-18 — Correction: the old-tyre bias is not only a 2025 effect; the first stint is predicted too fast
+
+- **Decision** — This corrects "Wear stays linear; the 2025 old-tyre bias is a year effect" (2026-11-18, above),
+  which rested on 15 races. No model change yet; both findings are logged as leads.
+- **Evidence on 57 races** — Old tyres: cross-year 2023/24 bias at 30+ laps is +0.19 s/lap (both held-out years
+  positive, 1,613 laps); on 2025 it is +0.46 s with the model worse than the zero baseline (MAE 0.81 vs 0.70 s).
+  First stints: predicted 0.17 s/lap too fast cross-year and 0.12 s on 2025; last stints about right (stint check).
+  Both are specific residual problems that persist across periods (rule 3d).
+- **Options** — A flattening wear term; a non-linear fuel term; document and leave. Not tried: it changes the model
+  and CLAUDE.md asks before a scope change.
+- **What would make us reconsider** — An improvement on 2023/24 cross-year clean-lap MAE and stint error, without
+  touching 2025.
+
+## 2026-11-18 — Safety cars, re-measured on 22 races (updates the 14-stop result)
+
+- **Decision** — Same method, new numbers. Stops under a real safety car cost a median 65% of the normal pit loss
+  (102 stops, quartiles 45-95%; was 68% from 14 stops). Stops under a virtual one cost the normal amount (23 stops,
+  median 98%, quartiles 72-115%): now a measurement, not an absence of data.
+- **Evidence** — 22 replayable safety-car races, 312 cars, each scored by a model fitted without its year: neutralised
+  laps simulated as racing 162.3 s; replayed 17.3 s; replayed with cheaper stops 17.0 s. 2025 (10 races): 183.3 /
+  15.4 / 15.1 s, bias +5.0 -> +1.8 s. Cheaper stops help 7 races, hurt 4, change 11 by under 0.5 s. Median race MAE
+  11.8 s; 59% of races under 15 s.
+- **Correction** — Earlier I said cheaper stops were a clear gain; on the larger set the lap replay is what matters
+  and the stop discount is small.
+- **What would make us reconsider** — A per-circuit stop discount becoming estimable, or an overtaking rule.

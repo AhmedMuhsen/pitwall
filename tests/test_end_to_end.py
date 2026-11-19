@@ -109,3 +109,33 @@ def test_comparing_a_car_in_a_safety_car_race(safety_car_data):
     assert math.isfinite(result["simulated_actual"]) and abs(result["model_error"]) < 90
     with pytest.raises(ValueError, match="no safety-car windows"):
         compare_driver(rows, {**inputs, "neutralisations": {}}, "Sakhir", 2025, car)
+
+
+def test_refit_ensemble_is_repeatable_and_keeps_every_pair(data):
+    rows, _ = data
+    first = fit_inputs(rows, [2023, 2024], refits=4)
+    second = fit_inputs(rows, [2023, 2024], refits=4)
+
+    assert len(first["ensemble"]) == 4
+    assert [m["pit_loss"]["Monza"]["median"] for m in first["ensemble"]] == \
+           [m["pit_loss"]["Monza"]["median"] for m in second["ensemble"]]          # fixed seed
+    full_pairs = set(first["model"].pair_adjustments())
+    assert all(set(m["model"].pair_adjustments()) == full_pairs for m in first["ensemble"])
+    # Different subsets give (slightly) different fits.
+    assert len({round(m["traffic_table"]["mean"][0], 6) for m in first["ensemble"]}) > 1
+    assert "ensemble" not in first["ensemble"][0]
+
+
+def test_compare_driver_reports_the_gap_under_every_refit(data):
+    rows, _ = data
+    inputs = fit_inputs(rows, [2023, 2024], refits=4)
+    car = driver_choices(rows, "Monza", 2024, inputs["model"])[0]
+
+    result = compare_driver(rows, inputs, "Monza", 2024, car, traffic=True)
+
+    assert set(result["refit_gaps"]) == set(result["strategies"])
+    assert all(len(gaps) == 4 for gaps in result["refit_gaps"].values())
+    assert all(g == 0 for g in result["refit_gaps"]["actual"])                     # the baseline against itself
+    ranges = gap_ranges(result["sensitivity"], "actual", refit_gaps=result["refit_gaps"])
+    assert all(r["refits"] == 4 and 0 <= r["p_faster"] <= 1 for r in ranges)
+    assert verdict(ranges)["kind"] in {"agrees", "too_close", "leans", "prefers"}

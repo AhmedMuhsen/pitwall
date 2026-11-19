@@ -72,3 +72,34 @@ def test_cache_miss(monkeypatch, tmp_path):
     assert result == [{"lap_number": 7}]
 
 
+
+
+def test_race_sessions_reads_cached_files_and_skips_sprints_and_cancelled(tmp_path):
+    import json
+    from pitwall.ingestion import race_sessions
+
+    def session(key, name, date, circuit="Monza", cancelled=False, year=2024):
+        return {"session_key": key, "session_name": name, "date_start": date, "circuit_short_name": circuit,
+                "year": year, "meeting_key": key // 10, "is_cancelled": cancelled}
+    (tmp_path / "sessions_2024.json").write_text(json.dumps([
+        session(2, "Race", "2024-09-01T13:00:00+00:00"), session(1, "Race", "2024-03-02T15:00:00+00:00", "Sakhir"),
+        session(3, "Sprint", "2024-04-20T04:00:00+00:00"), session(4, "Race", "2024-05-01T13:00:00+00:00", cancelled=True)]))
+
+    races = race_sessions(tmp_path, years=(2024,))
+
+    assert [(r["session_key"], r["circuit"]) for r in races] == [(1, "Sakhir"), (2, "Monza")]   # oldest first
+    assert set(races[0]) == {"session_key", "year", "circuit", "date", "meeting_key"}
+
+
+def test_race_sessions_rejects_duplicate_keys_and_missing_files(tmp_path):
+    import json
+    import pytest
+    from pitwall.ingestion import race_sessions
+    row = {"session_key": 1, "session_name": "Race", "date_start": "2024-03-02T15:00:00+00:00",
+           "circuit_short_name": "Sakhir", "year": 2024, "meeting_key": 1}
+    (tmp_path / "sessions_2024.json").write_text(json.dumps([row, row]))
+
+    with pytest.raises(ValueError, match="share a session_key"):
+        race_sessions(tmp_path, years=(2024,))
+    with pytest.raises(FileNotFoundError):
+        race_sessions(tmp_path, years=(2025,))

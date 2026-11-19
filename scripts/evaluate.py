@@ -8,13 +8,13 @@ from pitwall.evaluation import leave_one_race_out, score, score_by_group, split_
 from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel, build_pipeline
 from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
-from pitwall.backtest import backtest_race, second_half_record, strategy_pair_errors
+from pitwall.backtest import backtest_race, second_half_record, stint_holdout_errors, strategy_pair_errors
 from pitwall.comparison import (BASELINE, TRAIN_YEARS, comparable_races, compare_race, driver_choices,
                                 fastest_by_scenario, fit_final_model, fit_inputs, load_dataset)
 from pitwall.processing import race_distance
 from pitwall.simulator import observed_max_ages
 from pitwall.neutralisation import build_neutralisation, fit_sc_pit_loss, load_neutralisations
-from pitwall.traffic import fit_traffic_penalty, real_gaps
+from pitwall.traffic import fit_traffic_penalty, real_gaps, real_lap_penalties
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")
 NEUTRALISATIONS_PATH = Path("data/processed/neutralisations.json")
@@ -149,6 +149,9 @@ def cross_year_backtest(rows, wear_by_pair=False, pooling_alpha=None, pace="race
             if any("safety_car" in row["exclusion_reasons"] for row in race):
                 continue
             circuit = race[0]["circuit"]
+            if circuit not in pit_loss:
+                print(f"    {circuit} {year}: no measured stops in {train_years}, race left out of the backtest")
+                continue
             if circuit in lap_one:
                 lap_one_loss = lap_one[circuit]["median"]
             else:
@@ -303,6 +306,64 @@ def print_strategy_comparison(rows):
         print(fastest_by_scenario(result["sensitivity"]).rename(columns=lambda c: f"{c:+.3f}").to_string())
 
 
+def stint_check_records(rows, races, model, table):
+    """stint_holdout_errors for every car in the given (year, circuit) races, using only laps whose
+    compound@circuit pair the model knows (traffic on)."""
+    known = set(model.pair_adjustments())
+    records = []
+    for year, circuit in races:
+        race = [r for r in rows if r["circuit"] == circuit and r["year"] == year]
+        distance = race_distance(race)
+        gaps = real_gaps(race)
+        for driver in sorted({r["driver_number"] for r in race}):
+            mine = [r for r in race if r["driver_number"] == driver and r["lap_number"] <= distance
+                    and f"{r['compound']}@{r['circuit']}" in known]
+            if not mine:
+                continue
+            pit_laps = [r["lap_number"] for r in mine if "in_lap" in r["exclusion_reasons"]]
+            penalties = real_lap_penalties(driver, gaps, table, pit_laps, distance)
+            records += stint_holdout_errors(mine, model, penalties=penalties)
+    return records
+
+
+def stint_check(rows):
+    """Leave-one-stint-out records: 2023 and 2024 races predicted by a model fitted on the other year,
+    2025 races by the final model. Returns a DataFrame with a "group" column."""
+    races = [(year, circuit) for year, circuit in sorted({(r["year"], r["circuit"]) for r in rows})]
+    frames = []
+    for year, fold_train, _ in leave_one_year_out(rows, [2023, 2024]):
+        model = fit_final_model(fold_train)
+        frames.append(pd.DataFrame(stint_check_records(
+            rows, [race for race in races if race[0] == year], model,
+            fit_traffic_penalty(fold_train, model))).assign(group="2023-24 cross-year"))
+    train = [r for r in rows if r["year"] in TRAIN_YEARS]
+    model = fit_final_model(train)
+    frames.append(pd.DataFrame(stint_check_records(
+        rows, [race for race in races if race[0] == 2025], model,
+        fit_traffic_penalty(train, model))).assign(group="2025 (final model)"))
+    return pd.concat(frames, ignore_index=True)
+
+
+def print_stint_check(rows):
+    """Does the model get the cost of running a stint right, anywhere in the race? Each stint is predicted
+    from the same car's other stints, so it covers the whole race and first stints (unlike the
+    second-half pair check)."""
+    df = stint_check(rows)
+    print("\nLeave-one-stint-out: predict each stint from the same car's other stints (traffic on)")
+    for group, g in df.groupby("group"):
+        print(f"\n  {group}: {len(g)} stints, {g.groupby(['year', 'circuit', 'driver_number']).ngroups} cars, "
+              f"{g['laps'].mean():.1f} laps per stint")
+        print(f"    stint-total |error|: model {g['error_total'].abs().mean():.1f} s (median "
+              f"{g['error_total'].abs().median():.1f}), no tyre/fuel effect {g['flat_total'].abs().mean():.1f} s")
+        table = g.groupby("position").agg(stints=("laps", "size"), model_s_per_lap=("error_per_lap", "mean"),
+                                          model_abs_total=("error_total", lambda e: e.abs().mean()),
+                                          flat_s_per_lap=("flat_total", lambda e: 0.0))
+        table["flat_s_per_lap"] = (g.assign(flat_lap=g["flat_total"] / g["laps"]).groupby("position")["flat_lap"].mean())
+        print("    by position in the race (s per lap, + = predicted too slow):")
+        print(table.round(3).to_string().replace("\n", "\n      ").join(["      ", ""]))
+    return df
+
+
 PAIR_BINS = [0, 1, 3, 5, 10, float("inf")]
 PAIR_LABELS = ["0-1", "1-3", "3-5", "5-10", "10+"]
 
@@ -313,6 +374,8 @@ def second_half_records(rows, races, model, pit_loss, max_ages, traffic_table=No
     records = []
     for year, circuit in races:
         race = [r for r in rows if r["circuit"] == circuit and r["year"] == year]
+        if circuit not in pit_loss:
+            continue          # no measured stops at this circuit in the training years
         distance = race_distance(race)
         traffic = {"gaps": real_gaps(race), "table": traffic_table} if traffic_table is not None else None
         for driver in driver_choices(rows, circuit, year):
@@ -345,7 +408,9 @@ def print_strategy_pair_check(rows):
             rows, [race for race in races if race[0] == 2025], inputs["model"], inputs["pit_loss"],
             inputs["max_ages"], inputs["traffic_table"] if traffic else None)
 
-    print("\nStrategy pairs: predicted vs real second-half gap, each car's pace from its first half")
+    print("\nStrategy pairs, SECOND HALF OF THE RACE ONLY (so first-stint choices are not tested here; see the "
+          "leave-one-stint-out check for the whole race): predicted vs real second-half gap, each car's pace "
+          "from its first half")
     for label, by_traffic in groups.items():
         for traffic, records in by_traffic.items():
             skipped = pd.Series([r["skip_reason"] for r in records if r["skip_reason"]]).value_counts().to_dict()
@@ -384,11 +449,19 @@ def safety_car_backtest(rows, windows):
         pit_loss = pit_loss_by_circuit(stop_losses(train, model), train_years)
         lap_one = pit_loss_by_circuit(lap_one_losses(train, model), train_years)
         lap_one_all = median(r["loss"] for r in lap_one_losses(train, model) if r["loss"] is not None)
+        if circuit not in pit_loss:
+            print(f"    {circuit} {year}: no measured stops in {train_years}, race left out")
+            continue
         lap_one_loss = lap_one[circuit]["median"] if circuit in lap_one else lap_one_all
         max_ages = observed_max_ages(max_clean_tyre_age(train), train_years)
         table = fit_traffic_penalty(train, model)
         sc = fit_sc_pit_loss(train, windows, pit_loss, train_years)
         race = [r for r in rows if r["year"] == year and r["circuit"] == circuit]
+        try:
+            build_neutralisation(race, windows[race[0]["session_key"]], None)
+        except ValueError as error:
+            print(f"    {circuit} {year}: {error}; race left out of all three variants")
+            continue
         for variant in ("none", "laps", "laps+stops"):
             if variant == "none":
                 neutralisation = EMPTY_REPLAY
@@ -501,6 +574,7 @@ def main():
     print_residual_trends(rows)
     print_strategy_comparison(rows)
     print_final_test(rows)
+    print_stint_check(rows)
     print_strategy_pair_check(rows)
     print_safety_car_backtest(rows, load_neutralisations(NEUTRALISATIONS_PATH))
 

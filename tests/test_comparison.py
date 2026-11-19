@@ -247,9 +247,9 @@ def test_compare_driver_rejects_driver_without_full_race():
         compare_driver(DRIVER_RACE, INPUTS, "X", 2024, 2, min_clean_laps=2)
 
 
-def ranges_row(strategy, gap, low, high, confidence, flagged=False):
-    return {"strategy": strategy, "gap": gap, "min_gap": low, "max_gap": high,
-            "confidence": confidence, "flagged": flagged}
+def ranges_row(strategy, gap, low, high, confidence, flagged=False, p_faster=None):
+    return {"strategy": strategy, "gap": gap, "min_gap": low, "max_gap": high, "confidence": confidence,
+            "flagged": flagged, "p_faster": p_faster, "refits": 0 if p_faster is None else 20}
 
 
 def test_gap_ranges_hand_example():
@@ -276,34 +276,52 @@ def test_gap_ranges_slower_everywhere_and_missing_best_estimate():
         gap_ranges(rows, "one_stop")   # no "median" label in these rows
 
 
+def test_gap_ranges_counts_the_refits_that_find_a_strategy_faster():
+    rows = sensitivity(STRATEGIES, 4, "X", StubModel(), 100.0, {"costly": 20.0}, 0.0, MAX_AGES, "one_stop", [0.0])
+
+    result = gap_ranges(rows, "one_stop", base_pit_label="costly", refit_gaps={"two_stop": [19.0, 21.0, -1.0, 20.0]})
+    without = gap_ranges(rows, "one_stop", base_pit_label="costly")
+
+    two = next(r for r in result if r["strategy"] == "two_stop")
+    assert (two["p_faster"], two["refits"]) == (0.25, 4)
+    assert next(r for r in without if r["strategy"] == "two_stop")["p_faster"] is None
+
+
 def test_verdict_tiers():
     base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
-    far = ranges_row("far", -12.0, -15.0, -9.0, "faster in every scenario")
-    mid = ranges_row("mid", -5.0, -8.0, 2.0, "depends on assumptions")
-    near = ranges_row("near", -2.9, -4.0, -1.0, "faster in every scenario")
-    slower = ranges_row("slow", 4.0, 1.0, 7.0, "slower in every scenario")
+    far = ranges_row("far", -12.0, -15.0, -9.0, "faster in every scenario", p_faster=0.95)
+    mid = ranges_row("mid", -7.0, -9.0, 2.0, "depends on assumptions", p_faster=0.8)
+    near = ranges_row("near", -4.0, -5.0, -3.0, "faster in every scenario", p_faster=1.0)    # under the 5.3 s floor
+    fragile = ranges_row("fragile", -9.0, -12.0, 1.0, "depends on assumptions", p_faster=0.5)
+    slower = ranges_row("slow", 4.0, 1.0, 7.0, "slower in every scenario", p_faster=0.0)
 
     assert verdict([base, far, mid])["kind"] == "prefers"
     assert verdict([base, far, mid])["strategy"] == "far"
     assert verdict([base, far, mid])["robust"] is True
     assert verdict([base, mid, slower])["kind"] == "leans"
     assert verdict([base, mid, slower])["robust"] is False
-    assert verdict([base, near, slower])["kind"] == "too_close"
+    assert verdict([base, near, slower])["kind"] == "too_close"       # faster in every refit, but within the noise
+    assert verdict([base, fragile])["kind"] == "too_close"            # a big gap that half the refits don't find
     assert verdict([base, slower]) == {"kind": "agrees", "strategy": None, "range": None, "robust": False}
 
 
-def test_verdict_boundaries_and_custom_thresholds():
+def test_verdict_boundaries_custom_thresholds_and_missing_refits():
     base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
 
-    assert verdict([base, ranges_row("a", -3.0, -3.0, -3.0, "faster in every scenario")])["kind"] == "leans"
-    assert verdict([base, ranges_row("a", -10.0, -10.0, -10.0, "faster in every scenario")])["kind"] == "prefers"
-    assert verdict([base, ranges_row("a", -5.0, -5.0, -5.0, "faster in every scenario")], close=6.0)["kind"] == "too_close"
+    assert verdict([base, ranges_row("a", -5.3, -6.0, -4.0, "faster in every scenario", p_faster=0.9)])["kind"] == "prefers"
+    assert verdict([base, ranges_row("a", -5.29, -6.0, -4.0, "faster in every scenario", p_faster=0.9)])["kind"] == "too_close"
+    assert verdict([base, ranges_row("a", -8.0, -9.0, -7.0, "faster in every scenario", p_faster=0.7)])["kind"] == "leans"
+    assert verdict([base, ranges_row("a", -8.0, -9.0, -7.0, "faster in every scenario", p_faster=0.69)])["kind"] == "too_close"
+    assert verdict([base, ranges_row("a", -8.0, -9.0, -7.0, "faster in every scenario", p_faster=0.8)], floor=9.0)["kind"] == "too_close"
+    # No refits: faster in every scenario counts as "strong", anything else as "lean".
+    assert verdict([base, ranges_row("a", -8.0, -9.0, -7.0, "faster in every scenario")])["kind"] == "prefers"
+    assert verdict([base, ranges_row("a", -8.0, -9.0, 1.0, "depends on assumptions")])["kind"] == "leans"
 
 
 def test_verdict_ignores_flagged_alternatives():
     base = ranges_row("real", 0.0, 0.0, 0.0, "baseline")
-    flagged = ranges_row("c", -20.0, -25.0, -15.0, "faster in every scenario", flagged=True)
-    mid = ranges_row("b", -5.0, -8.0, 2.0, "depends on assumptions")
+    flagged = ranges_row("c", -20.0, -25.0, -15.0, "faster in every scenario", flagged=True, p_faster=1.0)
+    mid = ranges_row("b", -7.0, -9.0, 2.0, "depends on assumptions", p_faster=0.8)
 
     assert verdict([base, flagged, mid])["strategy"] == "b"
     assert verdict([base, flagged])["kind"] == "agrees"
@@ -474,3 +492,38 @@ def test_compare_driver_replays_the_safety_car():
     assert result["model_error"] == pytest.approx(22.35)
     assert result["neutralisation_windows"] == WINDOWS[1]
     assert result["strategies"]["1stop_under_SC"]["pit_laps"] == [2]
+
+
+class UnseenCircuitModel:
+    def predict(self, X):
+        raise ValueError("Pairs not seen in training: ['MEDIUM@X']")
+
+
+def test_driver_choices_leaves_out_cars_the_model_cannot_predict():
+    assert driver_choices(DRIVER_RACE, "X", 2024, UnseenCircuitModel(), min_clean_laps=1) == []
+    assert driver_choices(DRIVER_RACE, "X", 2024, StubModel(), min_clean_laps=1) == [1]
+
+
+def test_comparable_races_hides_circuits_without_training_pit_loss():
+    inputs = {"pit_loss": {"X": {"median": 20.0}}, "lap_one_loss": {"X": 0.0}}
+
+    assert comparable_races(DRIVER_RACE, inputs=inputs) == [(2024, "X")]
+    assert comparable_races(DRIVER_RACE, inputs={**inputs, "pit_loss": {}}) == []
+    assert comparable_races(DRIVER_RACE, inputs={**inputs, "lap_one_loss": {}}) == [(2024, "X")]   # the default covers it
+    assert comparable_races(DRIVER_RACE) == [(2024, "X")]              # without inputs nothing is hidden
+
+
+def test_race_settings_uses_the_default_lap_one_loss_for_a_circuit_without_one():
+    inputs = {**INPUTS, "lap_one_loss": {"Y": 7.0}, "lap_one_loss_default": 5.0}
+
+    assert race_settings(RACE, inputs, "X", 2024)["lap_one_loss"] == 5.0          # circuit X has none: the default
+    assert race_settings(RACE, {**inputs, "lap_one_loss": {"X": 6.0}}, "X", 2024)["lap_one_loss"] == 6.0
+    with pytest.raises(ValueError, match="No lap-1 loss"):
+        race_settings(RACE, {**inputs, "lap_one_loss": {}, "lap_one_loss_default": None}, "X", 2024)
+
+
+def test_driver_choices_leaves_out_a_real_strategy_that_breaks_the_two_compound_rule():
+    both_hard = [{**r, "compound": "HARD"} if r["driver_number"] == 1 else r for r in DRIVER_RACE]
+
+    assert driver_choices(both_hard, "X", 2024, StubModel(), min_clean_laps=1) == []
+    assert driver_choices(both_hard, "X", 2024) == [1]              # without a model nothing is simulated, so it stays

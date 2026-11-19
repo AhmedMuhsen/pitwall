@@ -61,3 +61,30 @@ def load_or_fetch(endpoint: str, session_key: int, raw_dir: Path = RAW_DIR) -> l
     with open(path.with_suffix(".meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
     return data
+
+
+def race_sessions(raw_dir: Path = RAW_DIR, years: tuple[int, ...] = (2023, 2024, 2025)) -> list[dict]:
+    '''
+    The Grand Prix race sessions OpenF1 lists, from the cached sessions_<year>.json files.
+
+    raw_dir: folder holding sessions_<year>.json (OpenF1 /sessions?year=...&session_name=Race)
+    years: seasons to read; OpenF1 has no data before 2023
+
+    returns: one dict per race, oldest first, with "session_key", "year", "circuit"
+    (OpenF1's circuit_short_name, e.g. "Yas Marina Circuit"), "date" (race start, ISO string)
+    and "meeting_key". Cancelled sessions and sessions that aren't a "Race" are left out.
+
+    raises FileNotFoundError if a year's file is missing, ValueError if two races share a session_key.
+    '''
+    races = []
+    for year in years:
+        with open(raw_dir / f"sessions_{year}.json", encoding="utf-8") as f:
+            for session in json.load(f):
+                if session["session_name"] == "Race" and not session.get("is_cancelled"):
+                    races.append({"session_key": session["session_key"], "year": session["year"],
+                                  "circuit": session["circuit_short_name"], "date": session["date_start"],
+                                  "meeting_key": session["meeting_key"]})
+    keys = [race["session_key"] for race in races]
+    if len(keys) != len(set(keys)):
+        raise ValueError("Two races share a session_key")
+    return sorted(races, key=lambda race: race["date"])

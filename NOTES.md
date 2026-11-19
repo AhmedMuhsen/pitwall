@@ -507,3 +507,15 @@ Next: step 3, the two model leads (first stints predicted 0.12-0.17 s/lap too fa
 
 Still unclear: whether race-total coverage recovers once the 2025 bias is fixed. The calibration.json half-widths now include
 2025 errors; the coverage numbers quoted are from before they were added.
+
+## 2026-11-19 Session 38 (step 3: the model)
+
+Done: tried to fix the first-stint (-0.17 s/lap) and old-tyre (+0.18 s) biases with 13 model variants, track temperature and a
+gradient-boosting benchmark, 2023/24 cross-year only. Nothing moves lap error by more than 0.01 s or removes the biases; the
+simple model stays (DECISIONS 2026-11-19; `scripts/ablation.py`, `docs/MODEL_ABLATION.md`). A useful negative result.
+
+Next: step 4, the what-if agent (an LLM calling `compare_driver` as a tool, with an eval set); push this and step 2/3 to GitHub
+first (the live demo redeploys).
+
+Still unclear: race-total intervals under-cover on 2025 (73%). Not fixed by recalibration or by the model; refitting the shipped
+model on 2025 is the open option.

@@ -256,7 +256,10 @@ depends on which races the model saw; it is not the probability that the alterna
 - **Strategy gaps are not validated against the same car on two strategies**: no such data exists. The checks
   use pairs of different cars (second half only) and a car's own stints (whole race).
 - **Track evolution** is folded into the race-fraction term; it cannot be separated from fuel burn, and the term
-  under-predicts heavy-fuel first stints by about 0.15 s per lap.
+  under-predicts heavy-fuel first stints by about 0.15 s per lap. I tried to fix this
+  and the old-tyre bias with 13 model variants (curved fuel and wear terms, a new-tyre warm-up term, track temperature) and a
+  gradient-boosting benchmark, scored on 2023/24 only ([`docs/MODEL_ABLATION.md`](docs/MODEL_ABLATION.md)): none moves the lap
+  error by more than 0.01 s or removes either bias, so the simple linear model stays. The leftover looks specific to each race.
 - **Old tyres** (30+ laps) lost less time than the model predicts, in both periods and more in 2025.
 - **No driver-specific tyre wear**: a driver sets the pace level and the real strategy; the alternatives rank
   the same way for every driver in a race.

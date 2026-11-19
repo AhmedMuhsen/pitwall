@@ -971,3 +971,26 @@ One entry per real decision. Format:
   for testing; the stated coverage numbers are from before they were added.
 - **What would make us reconsider** — After the model fix (step 3): re-run `build_calibration.py`; if race-total coverage
   reaches about 80% the static interval is enough, if not consider a recency-weighted calibration.
+
+## 2026-11-19 — The model stays as it is: 13 variants and a boosted-trees benchmark don't fix the two known biases
+
+- **Decision** — No change to `PooledWearModel` (alpha 1e5, race-fraction fuel term). The two leads from the stint check
+  (first stints predicted 0.17 s/lap too fast; laps on tyres 30+ old predicted 0.18 s too slow) are documented, not modelled.
+- **Requirement** — Rule 3d: extra structure only when the residuals show a specific problem, chosen on 2023/24
+  cross-year, never on 2025. The residuals did show two problems, so each fix was tried.
+- **Options tried** (all in `scripts/ablation.py` -> `docs/MODEL_ABLATION.md`) — fuel squared and cubed; a wear hinge at age 25;
+  tyre age squared; a new-tyre warm-up term; track temperature (race mean) times tyre age and times race fraction; combinations;
+  gradient boosting as a benchmark.
+- **Result** — Lap MAE moves between 0.549 and 0.566 s (current 0.558). The best linear variant (fuel squared + hinge) gains
+  0.004 s and takes the old-tyre bias from +0.179 to +0.122 s/lap; nothing removes the first-stint bias (-0.172 -> -0.148).
+  Track temperature adds nothing and its fitted effect changes sign between the two folds (noise). Boosted trees reach
+  0.549 s and a first-stint bias of -0.060, but the last-stint bias becomes -0.084 and trees can't extrapolate beyond the tyre
+  ages they saw, which is what the simulator has to do.
+- **Choice and reason** — Keep the model. The gains are within noise, each variant would force a re-run of every backtest,
+  the calibration and the README numbers, and the simple model is within 0.01 s of a far more flexible one. The remaining
+  bias is race-specific (the same circuit flips sign between years), so it is not a shape the available inputs can learn.
+- **Consequence** — The race-total intervals keep their 2025 under-coverage (73% against 80% nominal); the app and README say so.
+  A fix would be to refit the shipped model on 2025 too (not done: the intervals' measured coverage would then describe a
+  different model).
+- **What would make us reconsider** — New inputs that vary by race (tyre allocation, fuel load, engine modes, a 2026 season
+  under different regulations), or a same-car-two-strategies data source.

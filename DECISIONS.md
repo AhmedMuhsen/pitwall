@@ -1053,7 +1053,6 @@ One entry per real decision. Format:
   dropped and `== True` written `is True` in `test_processing.py` (not weaker: the values are bools).
 - **Known limits** — mypy treats pandas, scikit-learn, pyarrow and anthropic as `Any` (no stubs installed; `pandas-stubs` would check more
   and add errors). Coverage is 97% of lines; it says nothing about assertion strength. The app test checks "no exception and the main
-  controls work", not every chart. CI has not run on GitHub yet (it runs on push); the same commands pass locally in an environment
-  without the optional extra.
+  controls work", not every chart. CI ran on GitHub on 2026-11-19 (run 44457622094, commit a1164b5): lint, types and tests with the coverage floor all passed in 3m24s.
 - **What would make us reconsider** — A real bug that the type checker could have caught with stubs (then add `pandas-stubs`), or the
   coverage floor blocking a useful change.

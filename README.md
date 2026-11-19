@@ -1,5 +1,7 @@
 # PitWall
 
+[![checks](https://github.com/AhmedMuhsen/pitwall/actions/workflows/test.yml/badge.svg)](https://github.com/AhmedMuhsen/pitwall/actions/workflows/test.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Live demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://pitwall-formula1.streamlit.app/)
+
 A small F1 race-strategy simulator built on historical timing data. Pick a race and a car, and
 PitWall shows the strategy that car really ran, then estimates how its race time would have changed
 under a few other pit strategies, and how far to trust the comparison.
@@ -60,7 +62,7 @@ Deploying to AWS (Docker on EC2): [`docs/DEPLOY.md`](docs/DEPLOY.md).
 Every API response is cached and the fetch is resumable, so re-running only fetches what is missing.
 `uv run python scripts/evaluate.py` prints the numbers quoted below.
 
-Checks run on every push ([![checks](https://github.com/AhmedMuhsen/pitwall/actions/workflows/test.yml/badge.svg)](https://github.com/AhmedMuhsen/pitwall/actions/workflows/test.yml)):
+Checks run on every push (see the badge at the top):
 `ruff` (errors, unused code, import order), `mypy` (pandas, scikit-learn and pyarrow are untyped, so their values count as `Any`),
 and `pytest` with a coverage floor of 90%. Line coverage was 97% when this was written (`uv run pytest --cov=pitwall`); it measures
 which lines the tests run, not how strong their assertions are. The Streamlit app is tested headlessly with Streamlit's `AppTest`
@@ -320,6 +322,11 @@ What the grader can't catch: a number that is in a tool result but used wrongly 
 - **No 2022 data** (OpenF1 starts in 2023), and no wet or red-flag races, so those conditions are not covered.
 - **Alternatives use new tyre sets** after the first stint.
 - No claim of an optimal strategy, and no causal claim about tyre degradation.
+
+## License
+
+The code is MIT-licensed ([`LICENSE`](LICENSE)). The data in `data/processed/` is derived from OpenF1 and is not covered by that
+license; check OpenF1's terms before reusing it.
 
 ## Project notes
 

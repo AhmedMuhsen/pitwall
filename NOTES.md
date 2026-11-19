@@ -561,6 +561,9 @@ Next: step 6 (engineering polish). Not pushed: the app text changed, so a push r
 Done: ruff and mypy at 0 problems (were 51 under the chosen rules and 60), both in CI with pytest and a 90% coverage floor (coverage 97%); comparison.py split
 into strategies/fitting/gaps/comparison (evaluate.py output identical before and after, 962 lines); tests/test_app.py (4 AppTest tests,
 checked to fail when the app is broken); 7 more tests (296 total). Three TypeError crashes on a race with no timed laps are now ValueErrors.
-Next: push when you want CI to run for the first time (it also redeploys the live app).
-Still unclear: whether CI is green on GitHub (same commands pass locally without the anthropic extra). Optional: Node 20 deprecation warning for
+Pushed; CI is green on GitHub (lint, types, tests with the coverage floor, 3m24s).
+Still unclear: the live demo after the redeploy (open it and check the interval captions). Optional: Node 20 deprecation warning for
 actions/checkout and setup-uv.
+
+2026-11-19 (GitHub polish): MIT license (Ahmed Elmokadem), badges and a license section in the README, repo description, homepage (live demo)
+and topics set; full-history scan for secrets found none (54 commits). Repo is public.

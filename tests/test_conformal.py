@@ -64,3 +64,16 @@ def test_load_calibration(tmp_path):
 
     assert load_calibration(path)["targets"]["lap"]["half_width"] == 0.9
     assert load_calibration(tmp_path / "missing.json") is None
+
+
+def test_coverage_note_states_the_coverage_with_the_half_width_it_was_measured_at():
+    from pitwall.conformal import coverage_note
+    calibration = {"test_year": 2025, "calibration_years": [2023, 2024],
+                   "targets": {"race_total": {"half_width": 17.2, "static": {"half_width": 16.04, "coverage": 0.7108}}}}
+
+    assert coverage_note(calibration, "race_total", "race totals") == \
+        "calibrated on 2023/24 alone (±16.0 s) it covered 71% of 2025 race totals"
+    one_year = {**calibration, "calibration_years": [2024]}
+    assert coverage_note(one_year, "race_total", "values").startswith("calibrated on 2024 alone")
+    with pytest.raises(KeyError):
+        coverage_note(calibration, "gap", "gaps")

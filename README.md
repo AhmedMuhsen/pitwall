@@ -144,9 +144,9 @@ fully free per-circuit wear is clearly worse (0.623 s, 18.0 s), so the pooled mo
 | Zero baseline | 0.816 | 1.264 | -0.011 | 0.947 |
 | PitWall model | **0.599** | 1.063 | +0.145 | **0.716** |
 
-13% of 2025 laps are left out because their compound-at-circuit pair has no 2023/24 laps. The model is
+11% of the 2025 clean laps (2,266 of 20,247) are left out because their compound-at-circuit pair has no 2023/24 laps. The model is
 worse than the baseline on tyres 30+ laps old (MAE 0.81 vs 0.70 s, bias +0.46 s: predicted too slow). On
-2023/24 cross-year the same bias is smaller but present (+0.19 s at 30+ in both held-out years), so the
+2023/24 cross-year the same bias is smaller but present (+0.18 s at 30+ over 1,613 laps, `docs/MODEL_ABLATION.md`), so the
 model overstates the cost of long stints, more so in 2025.
 
 **Whole-race backtest**: each driver's real strategy run through the simulator, safety-car-free 2023/24
@@ -178,7 +178,7 @@ It cannot test first-stint choices:
 | 2023/24 cross-year (961 pairs), traffic on | 11.1 s | 13.3 s | 69% |
 | 2025 (445 pairs), traffic on | 9.2 s | 15.7 s | 85% |
 
-By size of the predicted gap the faster car is picked about 45-60% of the time under 5 s (a coin flip),
+By size of the predicted gap the faster car is picked 43-63% of the time under 5 s (a coin flip),
 71-75% between 5 and 10 s, and 85% (2023/24) to 99% (2025) above 10 s.
 
 **Traffic** is a lap-time penalty that depends on the gap to the car ahead, estimated from lap start times: a
@@ -209,12 +209,15 @@ interval is the prediction plus or minus the 80th percentile of the model's abso
 test is whether it then covers 80% of the real values in 2025, which the calibration never saw ("calibrated once"), and
 when the calibration is updated after every 2025 race in date order ("race by race"):
 
-| Interval for | Half-width | Errors it is calibrated on | 2025 coverage, once | 2025 coverage, race by race |
-|---|---:|---:|---:|---:|
-| A clean lap time | ±0.87 s | 44,334 laps | 79% | 79% |
-| A race total, no safety car | ±17.2 s | 262 driver-races | **71%** | **73%** |
-| A race total, safety car | ±26.7 s | 312 driver-races | 89% | 89% |
-| The gap between two real cars (second half) | ±15.9 s | 1,406 pairs | 89% | 88% |
+| Interval for | Half-width, calibrated on 2023/24 | 2025 coverage, calibrated once | Mean half-width, race by race | 2025 coverage, race by race | 2025 values tested |
+|---|---:|---:|---:|---:|---:|
+| A clean lap time | ±0.85 s | 79% | ±0.87 s | 79% | 17,981 laps |
+| A race total, no safety car | ±16.0 s | **71%** | ±17.2 s | **73%** | 83 driver-races |
+| A race total, safety car | ±33.6 s | 89% | ±30.4 s | 89% | 150 driver-races |
+| The gap between two real cars (second half) | ±17.1 s | 89% | ±16.6 s | 88% | 445 pairs |
+
+The app now uses half-widths that also include the 2025 errors (±0.87, ±17.2, ±26.7 and ±15.9 s; 44,334, 262, 312 and 1,406
+errors), so their coverage can no longer be tested on 2025. The coverage figures above belong to the half-widths in this table.
 
 Lap times are well calibrated. Race totals are not: they cover 73%, not 80%. The reason is a shift between seasons, not
 the method: 2025 race totals were predicted about 5 s too slow on average (mean error +4.8 s, against +1.0 s in
@@ -310,6 +313,9 @@ What the grader can't catch: a number that is in a tool result but used wrongly 
 - No claim of an optimal strategy, and no causal claim about tyre degradation.
 
 ## Project notes
+
+`docs/MODEL_CARD.md` says what the model is for, how well it works and where every number comes from;
+`docs/WRITEUP.md` is a short write-up of one decision, one failed approach and one lesson.
 
 `CLAUDE.md` holds the working rules, `docs/PITWALL_PLAN.md` the roadmap, `docs/SPEC.md` the one-page
 spec, `NOTES.md` a short log per session and `DECISIONS.md` every real design decision with the

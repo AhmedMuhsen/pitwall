@@ -105,3 +105,21 @@ def load_calibration(path) -> dict | None:
             return json.load(f)
     except FileNotFoundError:
         return None
+
+
+def coverage_note(calibration: dict, target: str, noun: str) -> str:
+    '''
+    The measured coverage of one interval, stated with the half-width it was measured at.
+
+    calibration: load_calibration result; target: "lap", "race_total", "race_total_safety_car" or "gap"
+    noun: what was covered, e.g. "race totals"
+
+    returns: e.g. "calibrated on 2023/24 alone (±16.0 s) it covered 71% of 2025 race totals". The half-width used for the
+    app's intervals is wider or narrower than this one, because it also includes the test year's errors, whose coverage can no
+    longer be tested.
+    '''
+    static = calibration["targets"][target]["static"]
+    years = calibration["calibration_years"]
+    label = f"{years[0]}/{str(years[-1])[-2:]}" if len(years) > 1 else str(years[0])
+    return (f"calibrated on {label} alone (±{static['half_width']:.1f} s) it covered {static['coverage']:.0%} of "
+            f"{calibration['test_year']} {noun}")

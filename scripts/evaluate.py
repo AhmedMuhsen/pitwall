@@ -178,6 +178,11 @@ def print_cross_year_backtest(rows):
             f"MAE/lap={done['error_per_lap'].abs().mean():.3f}s"
         )
         results[name] = done
+    print("\n  P_100000 with each car's pace from its first half (the app's setting), without / with traffic:")
+    for traffic in (False, True):
+        done = pd.DataFrame(cross_year_backtest(rows, False, 100_000, pace="first_half", traffic=traffic)).dropna(subset=["predicted"])
+        print(f"    traffic {'on ' if traffic else 'off'} n={len(done):>3}  MAE={done['error'].abs().mean():6.2f}s  bias={done['error'].mean():+6.2f}s  "
+              f"MAE/lap={(done['error'].abs() / done['laps']).mean():.3f}s")
     print("  skip reasons (B_frac):", pd.DataFrame(cross_year_backtest(rows))["skip_reason"].value_counts().to_dict())
 
     for metric, func in (("MAE", lambda e: e.abs().mean()), ("bias", lambda e: e.mean())):
@@ -289,7 +294,7 @@ def print_strategy_comparison(rows):
     print(f"\nStrategy comparison, P_1e5 fitted on {TRAIN_YEARS}: shared wear rate "
           f"{dict(zip(names, model.coef_))['pass__tyre_age']:+.3f} s/lap")
 
-    for circuit in sorted({row["circuit"] for row in rows}):
+    for circuit in sorted({row["circuit"] for row in rows if row["year"] == 2024}):     # only circuits with a 2024 race in the corpus
         result = compare_race(rows, inputs, circuit, 2024)
         settings = result["settings"]
         base = pd.DataFrame(result["ranking"])

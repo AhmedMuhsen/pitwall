@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pitwall.comparison import (STINT_ERROR_FLOOR, TRAIN_YEARS, comparable_races, compare_driver, custom_strategy,
                                 driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names, verdict)
-from pitwall.conformal import load_calibration
+from pitwall.conformal import coverage_note, load_calibration
 from pitwall.describe import plain, race_clock
 from pitwall.neutralisation import load_neutralisations
 from pitwall.processing import race_distance
@@ -324,13 +324,14 @@ def _interval_facts(ctx: dict, safety_car: bool) -> dict:
     if not calibration:
         return {}
     level = f"{calibration['level']:.0%}"
-    total = calibration["targets"]["race_total_safety_car" if safety_car else "race_total"]
+    key = "race_total_safety_car" if safety_car else "race_total"
+    total = calibration["targets"][key]
     gap = calibration["targets"]["gap"]
     return {"intervals": {
-        "race_total": f"{level} interval of plus or minus {_one_decimal(total['half_width'])} s; on {calibration['test_year']} races it covered "
-                      f"{total['rolling']['coverage']:.0%} of real race totals",
+        "race_total": f"{level} interval of plus or minus {_one_decimal(total['half_width'])} s (its width also uses 2025 errors; "
+                      f"{coverage_note(calibration, key, 'race totals')})",
         "gap": f"{level} interval of plus or minus {_one_decimal(gap['half_width'])} s, measured between two different real cars "
-               f"(a cautious bound; it covered {gap['rolling']['coverage']:.0%} of {calibration['test_year']} gaps)"}}
+               f"(a cautious bound; {coverage_note(calibration, 'gap', 'gaps')})"}}
 
 
 _SCHEMA = {"type": "object", "additionalProperties": False}

@@ -544,3 +544,14 @@ Still no live run. Cheapest first look: `--limit 5 --max-cost 0.50`; Haiku 5.5 f
 ($0.50 each). First run exposed that the tools never stated list counts (fixed: offered_count, car_count). Left alone: Haiku's
 repeated Monaco miss, and example numbers in clarifying questions that the grader counts as ungrounded. Spent about $1.1 of OpenRouter credit in total.
 Next: step 5 (model card + write-up), then step 6 (engineering polish). Not committed.
+
+## 2026-11-19 Session 40 (step 5: model card and write-up)
+
+Done: docs/MODEL_CARD.md (every number traced to a command or file), docs/WRITEUP.md (all sections; the lesson and "what I would do
+differently" were written by Claude from the records at your request: edit them until they are true for you). Re-ran scripts/evaluate.py end to end and checked the README against it.
+Found and fixed: evaluate.py crashed on Interlagos 2024 since the corpus grew (one-line fix) and printed no first-half backtest variants
+(now prints 9.89 / 9.75 s); README said 13% of 2025 laps are left out (11% of clean laps), "45-60%" (43-63%), "+0.19" old-tyre bias
+(+0.18, from MODEL_ABLATION), and printed interval half-widths beside coverage numbers measured with different half-widths (table rebuilt).
+Also fixed: the app and the agent tool printed the same half-width/coverage mismatch; new conformal.coverage_note states coverage with the
+half-width it was measured at (test added, app rendered headless without errors). 289 tests pass.
+Next: step 6 (engineering polish). Not pushed: the app text changed, so a push redeploys the live demo.

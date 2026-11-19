@@ -16,7 +16,7 @@ import streamlit as st
 from pitwall.comparison import (STINT_ERROR_FLOOR, TRAIN_YEARS, comparable_races, compare_driver, cumulative_gap, custom_strategy,
                                 driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names,
                                 race_session_key, race_settings, verdict)
-from pitwall.conformal import load_calibration
+from pitwall.conformal import coverage_note, load_calibration
 from pitwall.describe import plain, race_clock
 from pitwall.neutralisation import load_neutralisations
 
@@ -48,8 +48,8 @@ def interval_text(calibration: dict | None, target: str, value: float | None = N
     span = f"{level:.0%} interval: ±{t['half_width']:.1f} s"
     if value is not None:
         span = f"{level:.0%} interval: {race_clock(value - t['half_width'])} to {race_clock(value + t['half_width'])} (±{t['half_width']:.0f} s)"
-    return (f"{span}. Calibrated on {t['n_calibration']} errors; on {calibration['test_year']} races it covered "
-            f"{t['rolling']['coverage']:.0%} of real values when updated race by race (target {level:.0%}).")
+    return (f"{span}. Calibrated on {t['n_calibration']} errors, including {calibration['test_year']}'s; "
+            f"{coverage_note(calibration, target, 'values')} (target {level:.0%}).")
 
 
 def verdict_box(colour: str, headline: str, body: str) -> None:
@@ -289,8 +289,8 @@ with st.expander("All numbers"):
     } for g in ranges]), hide_index=True, width="stretch")
     if gap_calibration:
         st.caption(f"The interval for a gap is ±{gap_calibration['half_width']:.0f} s, measured on gaps between two different real "
-                   f"cars in the second half of the race (it covered {gap_calibration['rolling']['coverage']:.0%} of "
-                   f"{calibration['test_year']} gaps, target {calibration['level']:.0%}). That is wider than the uncertainty "
+                   f"cars in the second half of the race ({coverage_note(calibration, 'gap', 'gaps')}, target "
+                   f"{calibration['level']:.0%}). That is wider than the uncertainty "
                    "for one car's own strategies, because two cars also differ in pace and traffic; for one car the model's "
                    f"typical error on a single stint is about {STINT_ERROR_FLOOR:.0f} s. Treat it as a cautious bound. "
                    "It was measured on races without a safety car.")
@@ -302,7 +302,7 @@ with st.expander("All numbers"):
 
 lap_calibration = (calibration or {}).get("targets", {}).get("lap")
 LAP_INTERVAL_TEXT = (f"A clean lap time is within ±{lap_calibration['half_width']:.2f} s for about {calibration['level']:.0%} of laps "
-                     f"(it covered {lap_calibration['rolling']['coverage']:.0%} of {calibration['test_year']} laps)."
+                     f"({coverage_note(calibration, 'lap', 'laps')})."
                      if lap_calibration else "")
 sc_cost = inputs["sc_pit_loss"]
 SC_STOP_TEXT = f"about {sc_cost['ratio']:.0%} (measured on {sc_cost['n']} real stops in {TRAIN_YEARS[0]}-{TRAIN_YEARS[-1]})" if sc_cost else "the normal amount"

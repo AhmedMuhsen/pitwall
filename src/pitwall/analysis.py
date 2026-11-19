@@ -1,8 +1,10 @@
 from collections import defaultdict
 from statistics import median, quantiles
+from typing import Any
 
 import numpy as np
 import pandas as pd
+
 
 def average_lap_time_by_tyre_age(laps):
     """Average lap time at each tyre age.
@@ -83,7 +85,8 @@ def _residuals(model, groups: list[list[dict]]) -> list[float | None]:
         if len(groups) == 1:
             return [None]
         return [_residuals(model, [group])[0] for group in groups]
-    result, i = [], 0
+    result: list[float | None] = []
+    i = 0
     for group in groups:
         result.append(float(sum(row["delta"] - predicted[i + k] for k, row in enumerate(group))))
         i += len(group)
@@ -155,7 +158,7 @@ def pit_loss_by_circuit(losses: list[dict], years: list[int]) -> dict[str, dict]
     circuit with no measured stop in those years has no key, never 0.
     '''
     measured = defaultdict(list)
-    skipped = defaultdict(lambda: defaultdict(int))
+    skipped: dict[Any, Any] = defaultdict(lambda: defaultdict(int))
     for stop in losses:
         if stop["year"] not in years:
             continue
@@ -232,12 +235,12 @@ def residual_trends(rows: list[dict], model, min_laps: int = 30) -> list[dict]:
         "collinear" (race_fraction and tyre ages can't be separated, every
         compound in the race).
     '''
-    races = defaultdict(lambda: defaultdict(list))
+    races: dict[Any, Any] = defaultdict(lambda: defaultdict(list))
     for row in rows:
         if row["is_clean"] and row["delta"] is not None:
             races[row["session_key"]][row["compound"]].append(row)
 
-    records = []
+    records: list[dict[str, Any]] = []
     for session_key, by_compound in races.items():
         first = next(iter(by_compound.values()))[0]
         race_records, fitted = {}, []  # fitted: (compound, rows, residuals)
@@ -262,16 +265,17 @@ def residual_trends(rows: list[dict], model, min_laps: int = 30) -> list[dict]:
                 record["skip_reason"] = record["skip_reason"] or "no_compound_fitted"
         else:
             # Columns: race_fraction, then per compound a level and a tyre_age slope.
-            X, y = [], []
+            rows_x: list[list[float]] = []
+            y: list[float] = []
             for i, (_, compound_rows, residuals) in enumerate(fitted):
                 for row, residual in zip(compound_rows, residuals):
                     columns = [0.0] * (1 + 2 * len(fitted))
                     columns[0] = row["race_fraction"]
                     columns[1 + 2 * i] = 1.0
                     columns[2 + 2 * i] = row["tyre_age"]
-                    X.append(columns)
+                    rows_x.append(columns)
                     y.append(residual)
-            X = np.array(X)
+            X = np.array(rows_x)
             # lstsq would quietly return one of many answers if columns are dependent.
             if np.linalg.matrix_rank(X) < X.shape[1]:
                 for compound, _, _ in fitted:

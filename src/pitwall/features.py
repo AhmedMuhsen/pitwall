@@ -1,7 +1,10 @@
 """Model inputs and target built from the processed lap dataset rows."""
 from collections import defaultdict
 from statistics import median
+from typing import Any
+
 import pandas as pd
+
 
 def driver_reference_laps(rows: list[dict]) -> dict[tuple, float]:
     '''
@@ -74,7 +77,7 @@ def add_race_fraction(rows: list[dict]) -> list[dict]:
     if not rows:
         raise ValueError("Laps list is empty")
 
-    race_laps = {}
+    race_laps: dict[Any, Any] = {}
     for row in rows:
         key = row['session_key']
         if row['lap_duration'] is not None:

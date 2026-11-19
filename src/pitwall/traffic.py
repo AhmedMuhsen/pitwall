@@ -7,6 +7,7 @@ that car crossed the line to start the same lap number, so there is no need for 
 from bisect import bisect_right
 from collections import defaultdict
 from datetime import datetime
+from typing import Any
 
 import pandas as pd
 
@@ -24,7 +25,7 @@ def start_times(race_rows: list[dict]) -> dict[int, dict[int, float]]:
     returns: dict driver_number -> {lap_number: seconds since the epoch}; a lap
     with no date_start is left out.
     '''
-    times = defaultdict(dict)
+    times: defaultdict[Any, dict] = defaultdict(dict)
     for row in race_rows:
         if row["date_start"] is not None:
             times[row["driver_number"]][row["lap_number"]] = datetime.fromisoformat(row["date_start"]).timestamp()

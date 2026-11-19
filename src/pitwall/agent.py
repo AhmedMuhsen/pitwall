@@ -4,6 +4,7 @@ The model never computes anything itself. It decides which tool to call, with wh
 plain words; agent_eval.py checks that it does exactly that. Which provider answers is up to the client (llm.py).
 """
 import json
+from typing import Any
 
 from pitwall.agent_tools import TOOL_DEFINITIONS, run_tool
 
@@ -46,7 +47,7 @@ def run_agent(question: str, ctx: dict, client, model: str = DEFAULT_MODEL, max_
     "input_tokens" and "output_tokens", and "cost_usd" when the provider reports it, else None). An unfinished, refused or failed
     run has an empty "answer"; a run cut off by max_tokens keeps the partial text.
     '''
-    messages = [{"role": "user", "content": question}]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": question}]
     tool_calls = []
     usage = {"input_tokens": 0, "output_tokens": 0, "cost_usd": None}
     for turn in range(1, max_turns + 1):

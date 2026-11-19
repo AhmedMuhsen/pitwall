@@ -1,19 +1,48 @@
 from pathlib import Path
 from statistics import median
+
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 
-from pitwall.evaluation import leave_one_race_out, score, score_by_group, split_by_year, leave_one_year_out
-from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
+from pitwall.analysis import (
+    lap_one_losses,
+    max_clean_tyre_age,
+    pit_loss_by_circuit,
+    residual_trends,
+    stop_losses,
+)
+from pitwall.backtest import (
+    backtest_race,
+    second_half_record,
+    stint_holdout_errors,
+    strategy_pair_errors,
+)
+from pitwall.comparison import (
+    BASELINE,
+    TRAIN_YEARS,
+    comparable_races,
+    compare_race,
+    driver_choices,
+    fastest_by_scenario,
+    fit_final_model,
+    fit_inputs,
+    load_dataset,
+)
+from pitwall.evaluation import (
+    leave_one_race_out,
+    leave_one_year_out,
+    score,
+    score_by_group,
+    split_by_year,
+)
 from pitwall.model import PooledWearModel, build_pipeline
-from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
-from pitwall.backtest import backtest_race, second_half_record, stint_holdout_errors, strategy_pair_errors
-from pitwall.comparison import (BASELINE, TRAIN_YEARS, comparable_races, compare_race, driver_choices,
-                                fastest_by_scenario, fit_final_model, fit_inputs, load_dataset)
+from pitwall.neutralisation import (
+    build_neutralisation,
+    fit_sc_pit_loss,
+    load_neutralisations,
+)
 from pitwall.processing import race_distance
 from pitwall.simulator import observed_max_ages
-from pitwall.neutralisation import build_neutralisation, fit_sc_pit_loss, load_neutralisations
 from pitwall.traffic import fit_traffic_penalty, real_gaps, real_lap_penalties
 
 DATASET_PATH = Path("data/processed/lap_dataset.parquet")

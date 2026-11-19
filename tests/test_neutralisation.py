@@ -1,8 +1,14 @@
 import pandas as pd
 import pytest
 
-from pitwall.neutralisation import (apply_neutralisation, build_neutralisation, field_lap_times, fit_sc_pit_loss,
-                                    load_neutralisations, neutralised_windows)
+from pitwall.neutralisation import (
+    apply_neutralisation,
+    build_neutralisation,
+    field_lap_times,
+    fit_sc_pit_loss,
+    load_neutralisations,
+    neutralised_windows,
+)
 
 
 def message(text, lap, date, category="SafetyCar"):

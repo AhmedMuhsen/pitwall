@@ -7,8 +7,18 @@ from types import SimpleNamespace as NS
 import pytest
 
 from pitwall.agent_tools import TOOL_DEFINITIONS
-from pitwall.llm import (AnthropicClient, AuthenticationFailed, LLMError, OpenRouterClient, OutOfCredits, ToolCall,
-                         anthropic_messages, openai_messages, openai_tools, parse_openai_response)
+from pitwall.llm import (
+    AnthropicClient,
+    AuthenticationFailed,
+    LLMError,
+    OpenRouterClient,
+    OutOfCredits,
+    ToolCall,
+    anthropic_messages,
+    openai_messages,
+    openai_tools,
+    parse_openai_response,
+)
 
 CALL = {"id": "call_1", "type": "function", "function": {"name": "compare_strategy", "arguments": '{"race": "Monza 2024", "car": "LEC", "compounds": [], "pit_laps": []}'}}
 BODY = {"choices": [{"message": {"role": "assistant", "content": None, "tool_calls": [CALL]}, "finish_reason": "tool_calls"}],

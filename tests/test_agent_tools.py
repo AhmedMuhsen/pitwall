@@ -3,8 +3,16 @@ import json
 
 import pytest
 
-from pitwall.agent_tools import (TOOL_DEFINITIONS, compare_strategy, list_cars, list_races, load_context, resolve_car,
-                                 resolve_race, run_tool)
+from pitwall.agent_tools import (
+    TOOL_DEFINITIONS,
+    compare_strategy,
+    list_cars,
+    list_races,
+    load_context,
+    resolve_car,
+    resolve_race,
+    run_tool,
+)
 
 
 @pytest.fixture(scope="module")
@@ -120,3 +128,13 @@ def test_lists_state_their_own_counts(ctx):
 
     cars = list_cars(ctx, "Miami 2024")
     assert cars["car_count"] == len(cars["cars"]) and cars["car_count"] > 0
+
+
+def test_a_race_with_no_timed_laps_is_an_error_not_none(ctx):
+    from pitwall.agent_tools import _distance
+    emptied = {**ctx, "rows": [{**r, "lap_duration": None} if r["circuit"] == "Monza" and r["year"] == 2024 else r
+                               for r in ctx["rows"]]}
+
+    assert _distance(ctx, 2024, "Monza") > 0
+    with pytest.raises(ValueError, match="no timed laps"):
+        _distance(emptied, 2024, "Monza")

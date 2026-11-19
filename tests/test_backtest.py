@@ -1,8 +1,14 @@
 import pandas as pd
 import pytest
 
-from pitwall.backtest import (actual_strategy, backtest_race, error_components, second_half_record,
-                              stint_holdout_errors, strategy_pair_errors)
+from pitwall.backtest import (
+    actual_strategy,
+    backtest_race,
+    error_components,
+    second_half_record,
+    stint_holdout_errors,
+    strategy_pair_errors,
+)
 
 
 class StubModel:
@@ -80,6 +86,13 @@ def test_backtest_race_refuses_race_with_safety_car():
     rows = [race_lap(1, 1, 95.0, 1, "SOFT", 0, False, ["lap_1", "safety_car"])]
 
     with pytest.raises(ValueError, match="safety"):
+        backtest_race(rows, StubModel(), pit_loss=20.0, lap_one_loss=5.0, max_ages=MAX_AGES)
+
+
+def test_backtest_race_refuses_a_race_with_no_timed_laps():
+    rows = [race_lap(1, 1, None, 1, "SOFT", 0, False)]
+
+    with pytest.raises(ValueError, match="no timed laps"):
         backtest_race(rows, StubModel(), pit_loss=20.0, lap_one_loss=5.0, max_ages=MAX_AGES)
 
 

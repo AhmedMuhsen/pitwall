@@ -1,23 +1,38 @@
 """Compares a small set of strategies with the simulator and tests how assumptions change the ranking."""
-from collections import defaultdict
-from statistics import median
-
 import json
 import random
+from collections import defaultdict
+from statistics import median
+from typing import Any
 
 import pandas as pd
 import pyarrow.parquet as pq
 
-from pitwall.analysis import lap_one_losses, max_clean_tyre_age, pit_loss_by_circuit, residual_trends, stop_losses
+from pitwall.analysis import (
+    lap_one_losses,
+    max_clean_tyre_age,
+    pit_loss_by_circuit,
+    residual_trends,
+    stop_losses,
+)
 from pitwall.backtest import actual_strategy, first_half_pace
 from pitwall.evaluation import leave_one_year_out
 from pitwall.features import add_delta, add_race_fraction, driver_reference_laps
 from pitwall.model import PooledWearModel
-from pitwall.neutralisation import apply_neutralisation, build_neutralisation, fit_sc_pit_loss
+from pitwall.neutralisation import (
+    apply_neutralisation,
+    build_neutralisation,
+    fit_sc_pit_loss,
+)
 from pitwall.processing import race_distance
 from pitwall.simulator import observed_max_ages, simulate, validate_strategy
-from pitwall.traffic import (fit_traffic_penalty, real_gaps, real_lap_penalties, start_times,
-                             traffic_timeline)
+from pitwall.traffic import (
+    fit_traffic_penalty,
+    real_gaps,
+    real_lap_penalties,
+    start_times,
+    traffic_timeline,
+)
 
 # Final model and training years: DECISIONS 2026-11-17 and 2026-11-18.
 FINAL_ALPHA = 100_000
@@ -128,7 +143,7 @@ def compare_strategies(strategies: dict[str, dict], race_distance: int, circuit:
             raise ValueError(f"Traffic anchor {traffic['anchor']!r} can't be simulated: {e}") from e
     results = []
     for name, strategy in strategies.items():
-        row = {"strategy": name, "total": None, "gap": None, "rank": None, "flags": [], "error": None}
+        row: dict[str, Any] = {"strategy": name, "total": None, "gap": None, "rank": None, "flags": [], "error": None}
         try:
             run = _run_strategy(strategy, *shared, None if name == (traffic or {}).get("anchor") else anchor_cum,
                                 neutralisation)
@@ -314,7 +329,7 @@ def fit_ensemble(train: list[dict], train_years: list[int], windows: dict[int, l
     '''
     rng = random.Random(seed)
     sessions = sorted({r["session_key"] for r in train})
-    pairs_by_session = {}
+    pairs_by_session: dict[Any, set] = {}
     for row in train:
         if row["is_clean"] and row["delta"] is not None:
             pairs_by_session.setdefault(row["session_key"], set()).add((row["compound"], row["circuit"]))
@@ -445,9 +460,10 @@ def comparable_races(rows: list[dict], windows: dict[int, list[dict]] | None = N
         if "safety_car" in row["exclusion_reasons"] and not (windows or {}).get(row["session_key"]):
             unreplayable.add((row["year"], row["circuit"]))
     for session, race in by_session.items():
-        if (windows or {}).get(session):
+        session_windows = (windows or {}).get(session)
+        if session_windows:
             try:
-                build_neutralisation(race, windows[session], None)
+                build_neutralisation(race, session_windows, None)
             except ValueError:
                 unreplayable.add((race[0]["year"], race[0]["circuit"]))     # no field lap time to replay
     if inputs is not None:
@@ -484,10 +500,12 @@ def driver_choices(rows: list[dict], circuit: str, year: int, model=None, min_cl
     compound it never saw at that circuit) is left out too, and so is one whose real strategy
     the simulator would refuse (e.g. two stints on the same compound).
 
-    raises ValueError if the race isn't in rows or had a safety car with no windows given.
+    raises ValueError if the race isn't in rows, has no timed laps, or had a safety car with no windows given.
     '''
     race = _race_rows(rows, circuit, year, windows)
     distance = race_distance(race)
+    if distance is None:
+        raise ValueError(f"{circuit} {year} has no timed laps")
     references = driver_reference_laps(race)
     timed = defaultdict(set)
     by_driver = defaultdict(list)
@@ -669,7 +687,7 @@ def compare_driver(rows: list[dict], inputs: dict, circuit: str, year: int, driv
     result = _compare_all(strategies, settings, circuit, inputs, "actual", traffic_inputs, neutralisation, light)
     if light:
         return {"ranking": result["ranking"]}
-    refit_gaps = {name: [] for name in strategies}
+    refit_gaps: dict[str, list[float]] = {name: [] for name in strategies}
     for member in inputs.get("ensemble", []):
         try:
             refit = compare_driver(rows, member, circuit, year, driver, min_clean_laps, custom, traffic, light=True)
@@ -725,7 +743,7 @@ def gap_ranges(sensitivity_rows: list[dict], baseline: str, base_pit_label: str 
 
     raises ValueError if no row is the best-estimate scenario.
     '''
-    by_strategy = {}
+    by_strategy: dict[str, Any] = {}
     for row in sensitivity_rows:
         if row["gap"] is None:
             continue

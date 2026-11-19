@@ -1,6 +1,12 @@
 import pytest
 
-from pitwall.conformal import conformal_half_width, coverage, load_calibration, rolling_coverage, summarise_target
+from pitwall.conformal import (
+    conformal_half_width,
+    coverage,
+    load_calibration,
+    rolling_coverage,
+    summarise_target,
+)
 
 
 def test_half_width_is_the_corrected_quantile_of_the_absolute_errors():

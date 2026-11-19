@@ -1,15 +1,22 @@
-from pitwall.processing import add_stint_data, count_duplicate_keys
-from pitwall.processing import exclusion_reasons, race_distance
-from pitwall.processing import find_safety_car_disruption_laps
-from pitwall.processing import add_exclusion_reasons
-from pitwall.processing import is_racing_lap
-from pitwall.processing import build_race_rows
-from pitwall.processing import keep_dataset_columns, DATASET_COLUMNS
-from pitwall.processing import count_missing
-from pitwall.processing import count_reasons, EXCLUSION_REASONS
-from pitwall.processing import race_quality, quality_markdown
-
 import pytest
+
+from pitwall.processing import (
+    DATASET_COLUMNS,
+    EXCLUSION_REASONS,
+    add_exclusion_reasons,
+    add_stint_data,
+    build_race_rows,
+    count_duplicate_keys,
+    count_missing,
+    count_reasons,
+    exclusion_reasons,
+    find_safety_car_disruption_laps,
+    is_racing_lap,
+    keep_dataset_columns,
+    quality_markdown,
+    race_distance,
+    race_quality,
+)
 
 STINTS = [
     {"driver_number": 1, "stint_number": 1, "lap_start": 1, "lap_end": 2, "tyre_age_at_start": 0, "compound": "SOFT"},
@@ -211,42 +218,42 @@ def test_originals_untouched():
                     {'category': 'SafetyCar', 'lap_number': 8, 'message': 'SAFETY CAR IN THIS LAP'},
                     {'category': 'SafetyCar', 'lap_number': 20, 'message': 'SAFETY CAR DEPLOYED'},
                     {'category': 'SafetyCar', 'lap_number': 22, 'message': 'SAFETY CAR IN THIS LAP'}]
-    result = add_exclusion_reasons(RACE_LAPS, STINTS, race_control)
+    add_exclusion_reasons(RACE_LAPS, STINTS, race_control)
     assert 'exclusion_reasons' not in RACE_LAPS[0]
 
 def test_invalid_race_lap():
     reasons = ['safety_car']
     result = is_racing_lap(reasons)
-    assert result == False
+    assert result is False
     reasons = ['testing', 'in_lap']
     result = is_racing_lap(reasons)
-    assert result == False
+    assert result is False
 
 def test_valid_race_lap():
     reasons = []
     result = is_racing_lap(reasons)
-    assert result == True
+    assert result is True
     
 def test_lap_1_valid_race_lap():
     reasons = ['lap_1']
     result = is_racing_lap(reasons)
-    assert result == True
+    assert result is True
 
 def test_after_finish_is_not_racing():
-    assert is_racing_lap(['after_finish']) == False
+    assert is_racing_lap(['after_finish']) is False
 
 
 def test_building_race_rows():
     rows = build_race_rows(RACE_LAPS, STINTS, [], 'Monza', 2024)
     assert len(rows) == len(RACE_LAPS)
-    assert rows[0]['is_racing'] == True
-    assert rows[0]['is_clean'] == False
+    assert rows[0]['is_racing'] is True
+    assert rows[0]['is_clean'] is False
     assert rows[0]['circuit'] == 'Monza'
     assert rows[0]['year'] == 2024
-    assert rows[1]['is_racing'] == False
-    assert rows[1]['is_clean'] == False
-    assert rows[3]['is_racing'] == True
-    assert rows[3]['is_clean'] == True
+    assert rows[1]['is_racing'] is False
+    assert rows[1]['is_clean'] is False
+    assert rows[3]['is_racing'] is True
+    assert rows[3]['is_clean'] is True
 
 def test_keep_dataset_columns_drops_the_rest():
     row = {column: 1 for column in DATASET_COLUMNS}

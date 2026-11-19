@@ -3,10 +3,16 @@ from pathlib import Path
 
 import pytest
 
-from pitwall.agent_eval import (forbidden_phrases, grade_case, load_cases, numbers_in, summarise, ungrounded_numbers)
-from pitwall.agent_tools import load_context, resolve_car, resolve_race
+from pitwall.agent_eval import (
+    forbidden_phrases,
+    grade_case,
+    load_cases,
+    numbers_in,
+    summarise,
+    ungrounded_numbers,
+)
+from pitwall.agent_tools import _distance, load_context, resolve_car, resolve_race
 from pitwall.comparison import custom_strategy
-from pitwall.agent_tools import _distance
 
 CASES = Path(__file__).parent.parent / "evals" / "agent_questions.jsonl"
 

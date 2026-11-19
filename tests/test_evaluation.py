@@ -1,7 +1,16 @@
-import pytest
-from pitwall.evaluation import score, split_by_year, score_by_group, leave_one_race_out, leave_one_year_out
 import math
+
 import pandas as pd
+import pytest
+
+from pitwall.evaluation import (
+    leave_one_race_out,
+    leave_one_year_out,
+    score,
+    score_by_group,
+    split_by_year,
+)
+
 
 def test_score_zero_baseline():
     actual = [1.0, -1.0, 2.0]
@@ -18,14 +27,14 @@ def test_score_empty_list():
     predicted = []
     
     with pytest.raises(ValueError):
-        result = score(actual, predicted)
+        score(actual, predicted)
     
 def test_lists_diff_length():
     actual = [1.0, -1.0]
     predicted = [0.0, 0.0, 0.0]
 
     with pytest.raises(ValueError):
-        result = score(actual, predicted)
+        score(actual, predicted)
 
 def test_normal_case():
     rows = [

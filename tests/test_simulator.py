@@ -3,8 +3,13 @@ import pandas as pd
 import pytest
 
 from pitwall.model import build_pipeline
-from pitwall.simulator import (observed_max_ages, simulate, stint_range_flags, strategy_laps,
-                               validate_strategy)
+from pitwall.simulator import (
+    observed_max_ages,
+    simulate,
+    stint_range_flags,
+    strategy_laps,
+    validate_strategy,
+)
 
 
 class StubModel:

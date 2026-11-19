@@ -5,8 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from pitwall.comparison import (comparable_races, compare_driver, custom_strategy, driver_choices,
-                                fit_inputs, gap_ranges, load_dataset, verdict)
+from pitwall.comparison import (
+    comparable_races,
+    compare_driver,
+    custom_strategy,
+    driver_choices,
+    fit_inputs,
+    gap_ranges,
+    load_dataset,
+    verdict,
+)
 from pitwall.neutralisation import load_neutralisations
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mini_laps.parquet"

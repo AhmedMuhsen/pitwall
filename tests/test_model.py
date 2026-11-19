@@ -1,6 +1,8 @@
-from pitwall.model import PairAgeColumns, PooledWearModel, build_pipeline
-import pytest
 import pandas as pd
+import pytest
+
+from pitwall.model import PairAgeColumns, PooledWearModel, build_pipeline
+
 
 def test_learns_linear_wear_rate():
     dataset = pd.DataFrame({"compound": ['SOFT', 'SOFT', 'SOFT', 'SOFT'], "tyre_age": [1, 3, 0, 4],

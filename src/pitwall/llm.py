@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from typing import Any
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 RETRYABLE = {408, 429, 500, 502, 503, 504}
@@ -61,7 +62,7 @@ def openai_tools(tools: list[dict]) -> list[dict]:
 
 def openai_messages(system: str, messages: list[dict]) -> list[dict]:
     '''The neutral conversation as OpenAI-style messages (system first; each tool result is its own "tool" message).'''
-    out = [{"role": "system", "content": system}]
+    out: list[dict[str, Any]] = [{"role": "system", "content": system}]
     for message in messages:
         if message["role"] == "user":
             out.append({"role": "user", "content": message["content"]})

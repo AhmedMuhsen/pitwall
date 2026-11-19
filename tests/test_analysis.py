@@ -1,8 +1,15 @@
-from pitwall.analysis import average_lap_time_by_tyre_age
-from pitwall.analysis import max_clean_tyre_age
-from pitwall.analysis import median_clean_lap_by_race_lap
-from pitwall.analysis import lap_one_losses, pit_loss_by_circuit, residual_trends, stop_losses
 import pytest
+
+from pitwall.analysis import (
+    average_lap_time_by_tyre_age,
+    lap_one_losses,
+    max_clean_tyre_age,
+    median_clean_lap_by_race_lap,
+    pit_loss_by_circuit,
+    residual_trends,
+    stop_losses,
+)
+
 
 def test_empty_lap_raises():
     with pytest.raises(ValueError):

@@ -1,9 +1,8 @@
-import urllib.request
-import urllib.error
 import json
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-
 
 ENDPOINTS = {"laps", "stints", "race_control", "weather", "pit", "drivers"}
 API = "https://api.openf1.org/v1"

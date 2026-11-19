@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
 .venv/
 pitwall.egg-info
 # Cached data: regenerable from the OpenF1 API, too large for git

@@ -1,8 +1,10 @@
 import io
-import urllib.error
-from pitwall.ingestion import fetch_endpoint, load_or_fetch
-import pytest
 import json
+import urllib.error
+
+import pytest
+
+from pitwall.ingestion import fetch_endpoint, load_or_fetch
 
 
 def test_incorrect_endpoint():
@@ -76,6 +78,7 @@ def test_cache_miss(monkeypatch, tmp_path):
 
 def test_race_sessions_reads_cached_files_and_skips_sprints_and_cancelled(tmp_path):
     import json
+
     from pitwall.ingestion import race_sessions
 
     def session(key, name, date, circuit="Monza", cancelled=False, year=2024):
@@ -93,7 +96,9 @@ def test_race_sessions_reads_cached_files_and_skips_sprints_and_cancelled(tmp_pa
 
 def test_race_sessions_rejects_duplicate_keys_and_missing_files(tmp_path):
     import json
+
     import pytest
+
     from pitwall.ingestion import race_sessions
     row = {"session_key": 1, "session_name": "Race", "date_start": "2024-03-02T15:00:00+00:00",
            "circuit_short_name": "Sakhir", "year": 2024, "meeting_key": 1}

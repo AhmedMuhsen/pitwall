@@ -6,6 +6,7 @@ a fraction of the circuit's normal pit loss. Random safety cars are out of scope
 """
 import json
 from statistics import median, quantiles
+from typing import Any
 
 import pandas as pd
 
@@ -27,7 +28,8 @@ def neutralised_windows(race_control: list[dict]) -> list[dict]:
     message has no lap number.
     '''
     events = sorted((r for r in race_control if r["category"] == "SafetyCar"), key=lambda r: r["date"])
-    windows, started = [], {}
+    windows: list[dict] = []
+    started: dict[Any, Any] = {}
     for event in events:
         message = event["message"].upper()
         kind = "VSC" if "VIRTUAL" in message else "SC"
@@ -83,7 +85,7 @@ def field_lap_times(race_rows: list[dict], min_cars: int = 1) -> dict[int, float
     leaving out each car's in-lap and out-lap (pit-lane laps). A lap with fewer than min_cars
     such cars has no key (when every car pits at once there is no field lap time).
     '''
-    by_lap = {}
+    by_lap: dict[Any, Any] = {}
     for row in race_rows:
         if row["lap_duration"] is None or row["is_pit_out_lap"] or "in_lap" in row["exclusion_reasons"]:
             continue
@@ -167,7 +169,7 @@ def fit_sc_pit_loss(rows: list[dict], windows_by_session: dict[int, list[dict]],
     out-lap time minus the field's lap time on those two laps, divided by the circuit's
     normal pit loss. Virtual safety cars are not used (too few stops, none clearly cheaper).
     '''
-    by_session = {}
+    by_session: dict[Any, Any] = {}
     for row in rows:
         if row["year"] in years and any(w["kind"] == "SC" for w in windows_by_session.get(row["session_key"], [])):
             by_session.setdefault(row["session_key"], []).append(row)

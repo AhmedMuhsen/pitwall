@@ -13,9 +13,22 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from pitwall.comparison import (STINT_ERROR_FLOOR, TRAIN_YEARS, comparable_races, compare_driver, cumulative_gap, custom_strategy,
-                                driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names,
-                                race_session_key, race_settings, verdict)
+from pitwall.comparison import (
+    STINT_ERROR_FLOOR,
+    TRAIN_YEARS,
+    comparable_races,
+    compare_driver,
+    cumulative_gap,
+    custom_strategy,
+    driver_choices,
+    fit_inputs,
+    gap_ranges,
+    load_dataset,
+    load_driver_names,
+    race_session_key,
+    race_settings,
+    verdict,
+)
 from pitwall.conformal import coverage_note, load_calibration
 from pitwall.describe import plain, race_clock
 from pitwall.neutralisation import load_neutralisations
@@ -243,7 +256,7 @@ with right:
     st.markdown("**Where the time is won or lost**")
     alternatives = [g["strategy"] for g in ranges if g["confidence"] != "baseline"]
     picked = st.multiselect("Compare with the real strategy", alternatives,
-                            default=[answer["strategy"] or alternatives[0]], format_func=names.get)
+                            default=[answer["strategy"] or alternatives[0]], format_func=lambda name: names[name])
     if picked:
         lines = pd.concat([cumulative_gap(result["laps"], strategies, settings["pit_losses"]["median"],
                                           name, BASELINE).assign(strategy=names[name]) for name in picked])

@@ -163,7 +163,8 @@ def summarise(graded: list[dict], runs: list[dict], model: str) -> dict:
     "passed"}}, "tool_calls_per_case", "input_tokens", "output_tokens", "cost_usd": the provider's reported cost if every run has
     one, else an estimate from list prices (Anthropic model ids), else None}.
     '''
-    by_group, by_check = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
+    by_group: defaultdict[str, list[int]] = defaultdict(lambda: [0, 0])
+    by_check: defaultdict[str, list[int]] = defaultdict(lambda: [0, 0])
     for item in graded:
         by_group[item["group"]][0] += 1
         by_group[item["group"]][1] += item["passed"]

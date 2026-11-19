@@ -1,12 +1,13 @@
 """Real strategies run through the simulator, compared with the real race times (rule 8)."""
 from collections import defaultdict
 from statistics import median
+from typing import Any
 
 import pandas as pd
 
 from pitwall.features import driver_reference_laps
-from pitwall.processing import race_distance
 from pitwall.neutralisation import apply_neutralisation
+from pitwall.processing import race_distance
 from pitwall.simulator import simulate
 from pitwall.traffic import real_gaps, real_lap_penalties
 
@@ -30,7 +31,7 @@ def actual_strategy(driver_rows: list[dict]) -> dict:
     missing = [r["lap_number"] for r in laps if r["stint_number"] is None]
     if missing:
         raise ValueError(f"Laps with no stint: {missing}")
-    firsts = {}
+    firsts: dict[Any, Any] = {}
     for row in laps:
         firsts.setdefault(row["stint_number"], row)
     stints = [firsts[k] for k in sorted(firsts)]
@@ -152,8 +153,10 @@ def backtest_race(race_rows: list[dict], model, pit_loss: float, lap_one_loss: f
         raise ValueError("Race has safety-car laps; pass a neutralisation to replay them, or it can't be backtested")
 
     distance = race_distance(race_rows)
+    if distance is None:
+        raise ValueError("Race has no timed laps, so it can't be backtested")
     references = driver_reference_laps(race_rows)
-    gaps = real_gaps(race_rows) if traffic_table is not None else None
+    gaps: dict = real_gaps(race_rows) if traffic_table is not None else {}
     by_driver = defaultdict(list)
     for row in race_rows:
         by_driver[row["driver_number"]].append(row)

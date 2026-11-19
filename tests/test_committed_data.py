@@ -4,8 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from pitwall.comparison import (TRAIN_YEARS, comparable_races, compare_driver, driver_choices, fit_inputs,
-                                load_dataset, load_driver_names)
+from pitwall.comparison import (
+    TRAIN_YEARS,
+    comparable_races,
+    compare_driver,
+    driver_choices,
+    fit_inputs,
+    load_dataset,
+    load_driver_names,
+)
 from pitwall.neutralisation import load_neutralisations
 
 PROCESSED = Path(__file__).parent.parent / "data" / "processed"

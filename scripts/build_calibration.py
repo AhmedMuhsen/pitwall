@@ -8,9 +8,9 @@ Run after build_dataset.py and build_neutralisations.py:  uv run python scripts/
 import json
 from pathlib import Path
 
+import evaluate as ev
 import pandas as pd
 
-import evaluate as ev
 from pitwall.backtest import backtest_race, strategy_pair_errors
 from pitwall.comparison import TRAIN_YEARS, comparable_races, fit_inputs, load_dataset
 from pitwall.conformal import summarise_target

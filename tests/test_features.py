@@ -1,9 +1,13 @@
-import pytest
-
-from pitwall.features import driver_reference_laps
-from pitwall.features import add_delta, add_race_fraction, pair_age_columns
 import pandas as pd
 import pytest
+
+from pitwall.features import (
+    add_delta,
+    add_race_fraction,
+    driver_reference_laps,
+    pair_age_columns,
+)
+
 
 def test_median_calculation():
     rows = [

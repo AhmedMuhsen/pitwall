@@ -1,10 +1,26 @@
 import pandas as pd
 import pytest
 
-from pitwall.comparison import (candidate_strategies, comparable_races, compare_driver, compare_race,
-                                compare_strategies, cumulative_gap, custom_strategy, driver_choices, fastest_by_scenario, fit_inputs,
-                                gap_ranges, load_dataset, load_driver_names, race_session_key, race_settings,
-                                safety_car_candidate, sensitivity, verdict)
+from pitwall.comparison import (
+    candidate_strategies,
+    comparable_races,
+    compare_driver,
+    compare_race,
+    compare_strategies,
+    cumulative_gap,
+    custom_strategy,
+    driver_choices,
+    fastest_by_scenario,
+    fit_inputs,
+    gap_ranges,
+    load_dataset,
+    load_driver_names,
+    race_session_key,
+    race_settings,
+    safety_car_candidate,
+    sensitivity,
+    verdict,
+)
 from pitwall.simulator import simulate
 
 
@@ -221,6 +237,13 @@ def test_driver_choices_rejects_safety_car_race():
     race = [{**r, "exclusion_reasons": ["safety_car"]} if r["lap_number"] == 2 else r for r in DRIVER_RACE]
 
     with pytest.raises(ValueError, match="safety car"):
+        driver_choices(race, "X", 2024)
+
+
+def test_driver_choices_rejects_a_race_with_no_timed_laps():
+    race = [{**r, "lap_duration": None} for r in DRIVER_RACE]
+
+    with pytest.raises(ValueError, match="no timed laps"):
         driver_choices(race, "X", 2024)
 
 

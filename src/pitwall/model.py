@@ -1,9 +1,9 @@
 import numpy as np
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.linear_model import LinearRegression
 from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
 
 from pitwall.features import pair_age_columns
 

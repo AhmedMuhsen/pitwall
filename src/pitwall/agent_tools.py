@@ -9,8 +9,19 @@ import re
 import unicodedata
 from pathlib import Path
 
-from pitwall.comparison import (STINT_ERROR_FLOOR, TRAIN_YEARS, comparable_races, compare_driver, custom_strategy,
-                                driver_choices, fit_inputs, gap_ranges, load_dataset, load_driver_names, verdict)
+from pitwall.comparison import (
+    STINT_ERROR_FLOOR,
+    TRAIN_YEARS,
+    comparable_races,
+    compare_driver,
+    custom_strategy,
+    driver_choices,
+    fit_inputs,
+    gap_ranges,
+    load_dataset,
+    load_driver_names,
+    verdict,
+)
 from pitwall.conformal import coverage_note, load_calibration
 from pitwall.describe import plain, race_clock
 from pitwall.neutralisation import load_neutralisations
@@ -177,7 +188,7 @@ def list_races(ctx: dict) -> dict:
     returns: {"offered": {year: [circuit, ...]}, "offered_count": {year: n}, "not_available": {"Monte Carlo 2023": reason, ...},
     "years": [...]}; the counts are there so the model never has to count a list itself
     '''
-    offered = {}
+    offered: dict[str, list[str]] = {}
     for year, circuit in sorted(ctx["offered"]):
         offered.setdefault(str(year), []).append(circuit)
     not_available = {}
@@ -278,7 +289,10 @@ def compare_strategy(ctx: dict, race: str, car: str, compounds: list, pit_laps: 
 
 
 def _distance(ctx: dict, year: int, circuit: str) -> int:
-    return race_distance([r for r in ctx["rows"] if r["circuit"] == circuit and r["year"] == year])
+    distance = race_distance([r for r in ctx["rows"] if r["circuit"] == circuit and r["year"] == year])
+    if distance is None:
+        raise ValueError(f"{circuit} {year} has no timed laps")
+    return distance
 
 
 def _verdict_summary(answer: dict, names: dict) -> dict:

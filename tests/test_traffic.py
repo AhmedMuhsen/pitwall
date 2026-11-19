@@ -2,8 +2,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pitwall.traffic import (fit_traffic_penalty, gap_ahead, real_gaps, start_times, traffic_penalty,
-                             traffic_timeline)
+from pitwall.traffic import (
+    fit_traffic_penalty,
+    gap_ahead,
+    real_gaps,
+    start_times,
+    traffic_penalty,
+    traffic_timeline,
+)
 
 
 class ZeroModel:

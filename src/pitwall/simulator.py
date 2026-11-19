@@ -1,4 +1,5 @@
 """Turns a pit strategy into predicted lap times and a race total."""
+
 import pandas as pd
 
 DRY_COMPOUNDS = {"SOFT", "MEDIUM", "HARD"}
@@ -103,7 +104,7 @@ def observed_max_ages(table: dict, years: list[int]) -> dict[tuple, int]:
     returns: dict (circuit, compound) -> highest age in any of those years.
     A pair with no clean laps in those years has no key, never 0.
     '''
-    result = {}
+    result: dict[tuple, int] = {}
     for (circuit, year, compound), age in table.items():
         if year in years:
             key = (circuit, compound)

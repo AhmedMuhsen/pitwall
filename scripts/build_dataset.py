@@ -1,17 +1,21 @@
 """Builds data/processed/lap_dataset.parquet from the cached OpenF1 data of every Grand Prix in 2023-2025
 (fetch_races.py first), leaving out races the simulator can't represent, and writes two reports:
 docs/DATA_QUALITY.md (counts per included race) and docs/RACE_SELECTION.md (every race, included or not, and why)."""
+import json
 from collections import Counter
 from pathlib import Path
-
-import json
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from pitwall.ingestion import load_or_fetch, race_sessions
-from pitwall.processing import (build_race_rows, keep_dataset_columns, quality_markdown, race_exclusion_reasons,
-                                race_quality)
+from pitwall.processing import (
+    build_race_rows,
+    keep_dataset_columns,
+    quality_markdown,
+    race_exclusion_reasons,
+    race_quality,
+)
 
 OUTPUT_PATH = Path("data/processed/lap_dataset.parquet")
 REPORT_PATH = Path("docs/DATA_QUALITY.md")

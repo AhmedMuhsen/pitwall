@@ -1,5 +1,7 @@
 import math
+
 import pandas as pd
+
 
 def score(actual: list[float], predicted: list[float]) -> dict[str, float]:
     '''

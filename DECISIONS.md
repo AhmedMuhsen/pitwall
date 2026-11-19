@@ -897,3 +897,29 @@ One entry per real decision. Format:
 - **Correction** — Earlier I said cheaper stops were a clear gain; on the larger set the lap replay is what matters
   and the stop discount is small.
 - **What would make us reconsider** — A per-circuit stop discount becoming estimable, or an overtaking rule.
+
+## 2026-11-18 — Deployment: Docker on one EC2 instance; the three processed data files are committed
+
+- **Decision** — The app is deployed as a Docker container on a single `t3.small` EC2 instance (Amazon Linux 2023,
+  Elastic IP, HTTP on port 80), built on the server from the public GitHub repo by `deploy/deploy.sh`; first boot is
+  automated with `deploy/user-data.sh`. `data/processed/lap_dataset.parquet`, `driver_names.json` and
+  `neutralisations.json` (1.1 MB, derived from OpenF1) are committed through `.gitignore` exceptions so a fresh
+  clone, the Docker build and the server all run the app without a 20-minute fetch. The AWS steps are written out in
+  `docs/DEPLOY.md` and run by Ahmed; no AWS command was run by the assistant.
+- **Requirement** — Plan Week 9 and CLAUDE.md: deploy on AWS, budget alert first, record EC2 vs container here;
+  "does the deployed app work without your local files?".
+- **Options** — EC2 without Docker (systemd + uv on the instance; fewest moving parts); Docker on EC2 (chosen);
+  Streamlit Community Cloud (the named fallback); ECS/App Runner (rejected for a one-visitor demo). Data: commit the
+  three files (chosen), build on the server, copy by hand.
+- **Choice and reason** — Docker on EC2 was Ahmed's call. CLAUDE.md says Docker only if it solves a real problem; here
+  it gives one runtime for laptop, CI and server, a one-command rebuild/rollback, and a recognisable skill, at the cost
+  of a longer first build and a 1.26 GB image. Plain EC2 would also have worked. Committing the data makes the repo
+  runnable by a reviewer, which was the missing piece for a portfolio project.
+- **Measured** — Image 1.26 GB (3.06 GB before building as the app user: a `chown -R` had duplicated the virtualenv);
+  container healthy in about 9 s; a session peaks at 471 MB, hence 2 GB instance and a 1200 MB container limit;
+  `deploy/deploy.sh` replaces the container cleanly on a second run. Not measured: any AWS step, an x86 build.
+- **Known risk** — The data files are derived from OpenF1's API, which describes its data as open; whether
+  redistributing derived timing data in a public repo is acceptable under F1's rights was not checked (not legal
+  advice). The README says so and disclaims any affiliation.
+- **What would make us reconsider** — OpenF1 or F1 objecting to the data in the repo (then build on the server and
+  remove the files from history), a first x86 build failing, or the instance running out of memory.

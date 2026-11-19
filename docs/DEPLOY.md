@@ -1,72 +1,162 @@
-# Deploying PitWall
+# Deploying PitWall: Docker on one EC2 instance
 
-Status: **not deployed.** Nothing in this file has been run against AWS. It is the checklist and the
-two options for the decision CLAUDE.md asks for (EC2 or a container service, recorded in
-`DECISIONS.md`). Check current prices and console screens yourself; they change.
+**Status: not deployed yet.** The container is built and tested locally (see "What was and wasn't tested").
+**No AWS command below has been run.** You run each one, so you see what it does; if one fails, paste the output.
 
-## 0. Before anything else: a budget alert
+## What you will create
 
-In the AWS console: Billing and Cost Management -> Budgets -> Create budget -> "Cost budget" with a
-small monthly amount you are happy to lose, and email alerts at 80% and 100% of actual spend and at
-100% forecast. Do this on a new account first, before launching anything.
-
-## 1. The app needs three small files that are not in git
-
-`app.py` reads `data/processed/lap_dataset.parquet` (about 1 MB) and optionally
-`data/processed/driver_names.json` and `data/processed/neutralisations.json` (without the last one,
-the four races with a safety car are hidden). `.gitignore` excludes `data/processed/*`, so a fresh clone cannot
-run the app. Options:
-
-| | How | Trade-off |
+| Resource | Why | Cost note |
 |---|---|---|
-| **A (recommended)** | Add `!data/processed/lap_dataset.parquet`, `!data/processed/driver_names.json` and `!data/processed/neutralisations.json` under `data/processed/*` in `.gitignore` and commit the three files | Tiny, reproducible, works on every host. The files are derived from public OpenF1 data; mention OpenF1 in the README (done) |
-| B | Build on the server (about 350 API requests, ~20 minutes): `fetch_races.py`, `build_dataset.py`, `build_driver_names.py`, `build_neutralisations.py` | Slow, and depends on the API being up at deploy time |
-| C | `scp` the three files to the server | Manual; easy to forget on redeploy |
+| 1 EC2 instance, `t3.small` (2 GB RAM) | runs the container; the app peaks near 470 MB per session, so 1 GB is too tight | on-demand hourly price |
+| 16 GB gp3 EBS volume | Docker image (1.3 GB) + OS | per GB-month |
+| 1 Elastic IP | a stable address | public IPv4 addresses are billed hourly |
+| Security group | SSH from your IP only, HTTP from anywhere | free |
+| Budget alert | tells you before the bill surprises you | free |
 
-Raw API responses (`data/raw/`, about 46 MB) stay out of git.
+Prices change: check the AWS Pricing Calculator for your region before launching, and set the budget alert first.
+Everything is torn down by the commands in section 9. **Tear it down when you stop using it.**
 
-## 2. Hosting options
+## 0. Before launching anything
 
-### EC2 (recommended for the learning goal; no Docker needed)
+1. **Don't use the root account's keys.** Use an IAM user or Identity Center user with MFA, and make it your CLI profile
+   (`aws configure`, or `aws configure sso`). Check who you are: `aws sts get-caller-identity`.
+2. **Budget alert.** Edit `deploy/budget-notifications.json` (replace `YOU@example.com` twice) and, if you like,
+   the amount in `deploy/budget.json` (15 USD per month by default), then:
 
-1. Launch a small Ubuntu instance (try the smallest size with at least 1 GB of memory; the app needs
-   pandas, scikit-learn and Streamlit in memory). Create a key pair.
-2. Security group: SSH (22) from your IP only; the app port (8501) from anywhere, or from your IP
-   while testing.
-3. On the instance: install uv, `git clone` the repo, `uv sync --frozen`.
-4. Run: `uv run streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true`.
-5. Keep it running with a systemd unit (`ExecStart` = the command above, `WorkingDirectory` = the
-   repo, `Restart=on-failure`).
-6. HTTPS needs a domain plus a load balancer or a reverse proxy; for a portfolio demo plain HTTP on
-   a stated URL is acceptable if you say so in the README.
+   ```bash
+   ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+   aws budgets create-budget --account-id $ACCOUNT \
+       --budget file://deploy/budget.json \
+       --notifications-with-subscribers file://deploy/budget-notifications.json
+   ```
+   AWS emails you to confirm the subscription. It alerts at 80% of actual spend and 100% of forecast spend.
 
-You learn: instances, key pairs, security groups, systemd. You own patching and uptime.
+## 1. Settings
 
-### Container service (App Runner or ECS Fargate)
+```bash
+export AWS_DEFAULT_REGION=us-east-1          # use the region closest to you
+MYIP=$(curl -s https://checkip.amazonaws.com)
+AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+      --query Parameter.Value --output text)
+echo "$MYIP  $AMI"
+```
 
-Needs a `Dockerfile` (not written yet; CLAUDE.md says Docker only if the chosen option needs it), an
-ECR repository, and a service definition. More moving parts and a higher bill for something that
-serves a handful of visitors, but you get HTTPS and restarts for free. Choose it if "containers on
-AWS" is the thing you want on your CV.
+## 2. SSH key pair
 
-### Fallback
+```bash
+aws ec2 create-key-pair --key-name pitwall --key-type ed25519 --query KeyMaterial --output text > ~/.ssh/pitwall.pem
+chmod 400 ~/.ssh/pitwall.pem
+```
 
-Streamlit Community Cloud from a GitHub repo (option A above must be done so the data is in the repo).
-Free, minutes to set up, no AWS learning. CLAUDE.md names it as the fallback if the AWS deploy runs
-well past budget.
+## 3. Security group (SSH only from your IP, web from anywhere)
 
-## 3. After deploying: test from a clean browser
+```bash
+VPC=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
+SG=$(aws ec2 create-security-group --group-name pitwall --description "PitWall app" --vpc-id $VPC \
+     --query GroupId --output text)
+aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 22 --cidr $MYIP/32
+aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 80 --cidr 0.0.0.0/0
+```
+If `$VPC` comes back as `None`, the account has no default VPC: stop and ask.
 
-- Private window, no logins, from a different network if possible.
-- Open the app, pick a 2025 race and a car, check the verdict box, both charts and the "All numbers"
-  table appear. Switch races twice. Tick "Add it to the comparison" with two identical tyres and
-  confirm you get a message, not an error page.
-- Open the "Assumptions and limitations" panel.
-- Confirm no local file paths or stack traces are visible.
+## 4. Launch the instance
 
-## 4. Known limits to state
+`deploy/user-data.sh` runs once at first boot: installs Docker and git, clones the public repo, runs `deploy/deploy.sh`
+(build the image, start the container).
 
-- Cold start: the first visit fits the model (about 2 s here); later visits reuse it
-  (`st.cache_resource`).
+```bash
+INSTANCE=$(aws ec2 run-instances --image-id $AMI --instance-type t3.small --key-name pitwall \
+    --security-group-ids $SG --user-data file://deploy/user-data.sh \
+    --metadata-options HttpTokens=required,HttpEndpoint=enabled \
+    --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=16,VolumeType=gp3,Encrypted=true,DeleteOnTermination=true}' \
+    --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=pitwall}]' \
+    --query 'Instances[0].InstanceId' --output text)
+aws ec2 wait instance-running --instance-ids $INSTANCE
+echo $INSTANCE
+```
+
+## 5. Elastic IP
+
+```bash
+ALLOC=$(aws ec2 allocate-address --domain vpc --query AllocationId --output text)
+aws ec2 associate-address --instance-id $INSTANCE --allocation-id $ALLOC
+IP=$(aws ec2 describe-addresses --allocation-ids $ALLOC --query 'Addresses[0].PublicIp' --output text)
+echo "http://$IP"
+```
+
+## 6. Wait for the first build, then check it
+
+The first boot builds the image (a few minutes). Watch it:
+
+```bash
+ssh -i ~/.ssh/pitwall.pem ec2-user@$IP 'sudo tail -f /var/log/cloud-init-output.log'
+# stop with Ctrl-C once you see "pitwall is healthy"
+curl http://$IP/_stcore/health          # prints: ok
+```
+
+Then the clean-browser test, **in a private window, ideally on another network (your phone)**:
+
+- the page loads and a race picker appears; choose a 2025 race and a car; the verdict box and both charts render;
+- switch races twice, toggle "Include traffic", open the "Assumptions and limitations" panel;
+- tick "Add it to the comparison" with two identical tyres: you must get a message, not an error page;
+- no file paths or stack traces anywhere.
+
+## 7. Updating after a code change
+
+```bash
+git push                                  # from your laptop
+ssh -i ~/.ssh/pitwall.pem ec2-user@$IP 'cd /opt/pitwall && sudo ./deploy/deploy.sh'
+```
+
+## 8. HTTPS (optional, not tested)
+
+Plain HTTP on an IP is acceptable for a portfolio demo if the README says so. For HTTPS you need a domain pointing at
+the Elastic IP, then on the instance (open port 443 in the security group first) replace the `-p 80:8501` mapping with a
+Caddy container that gets a certificate automatically:
+
+```bash
+docker network create web
+docker rm -f pitwall && docker run -d --name pitwall --network web --restart unless-stopped --memory 1200m pitwall:latest
+docker run -d --name caddy --network web --restart unless-stopped -p 80:80 -p 443:443 -v caddy_data:/data \
+    caddy:2 caddy reverse-proxy --from your.domain.example --to pitwall:8501
+```
+
+## 9. Tear it all down (stops the bill)
+
+```bash
+aws ec2 terminate-instances --instance-ids $INSTANCE
+aws ec2 wait instance-terminated --instance-ids $INSTANCE
+aws ec2 release-address --allocation-id $ALLOC
+aws ec2 delete-security-group --group-id $SG
+aws ec2 delete-key-pair --key-name pitwall && rm ~/.ssh/pitwall.pem
+```
+If you closed the shell and lost the variables, find them again:
+`aws ec2 describe-instances --filters Name=tag:Name,Values=pitwall --query 'Reservations[].Instances[].InstanceId'`,
+`aws ec2 describe-addresses`, `aws ec2 describe-security-groups --group-names pitwall`.
+The budget stays (it costs nothing); delete it with `aws budgets delete-budget --account-id $ACCOUNT --budget-name pitwall-monthly`.
+
+## 10. If something goes wrong
+
+| Symptom | Look at |
+|---|---|
+| nothing at `http://$IP` after 10 minutes | `ssh ...` then `sudo tail -100 /var/log/cloud-init-output.log` |
+| container restarts | `sudo docker logs --tail 80 pitwall`, `sudo docker ps -a` |
+| killed for memory | `sudo docker stats --no-stream`; the container limit is 1200 MB, the instance has 2 GB |
+| SSH refused / times out | your IP changed: `aws ec2 authorize-security-group-ingress --group-id $SG --protocol tcp --port 22 --cidr NEW_IP/32` |
+| build can't clone the repo | the GitHub repo must be public and `git push` done (the clone happens on the server) |
+
+## What was and wasn't tested
+
+Tested locally (macOS, Docker 28, arm64): the image builds (1.26 GB), the container is healthy in about 9 s, serves
+HTTP 200, runs as a non-root user, the app executes inside it for 50 races, a session peaks at 471 MB, and
+`deploy/deploy.sh` builds, starts and replaces the container twice in a row.
+**Not tested:** every AWS command, the Amazon Linux install line in `deploy/user-data.sh`, and building on x86 (the server
+is x86_64, my laptop arm64; the Dockerfile uses only multi-arch base images and wheels, but the first server build is
+the real test).
+
+## Known limits to state
+
+- The first visit after a restart fits the model (about 5 s); later visits reuse it (`st.cache_resource`).
 - One process serves everyone; there is no database and no accounts.
-- Only the 15 cached races are available; there is no live data.
+- Only the cached races are available (50 of the 57 in the dataset); there is no live data.
+- The data files are derived from the public OpenF1 API (see the README); the project is not affiliated with Formula 1.

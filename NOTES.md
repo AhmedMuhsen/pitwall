@@ -480,3 +480,16 @@ EC2 vs container; commit the data files so a fresh clone can run the app.
 
 Still unclear: nothing here tests the same car on two strategies. The verdict floor and refit thresholds (70% / 90%)
 are judgment calls. Not committed.
+
+## 2026-11-18 Session 35 (deployment kit)
+
+Done: Dockerfile (1.26 GB, non-root, health check), `deploy/deploy.sh` and `user-data.sh`, `.streamlit/config.toml`,
+the three data files un-ignored and committed, `tests/test_committed_data.py`, and `docs/DEPLOY.md` rewritten as a
+step-by-step AWS CLI runbook (budget alert first, teardown last). Tested locally: the image builds, runs as a non-root
+user, the app executes inside it for 50 races, a session peaks at 471 MB, and deploy.sh replaces the container twice
+in a row. Found and fixed: a `chown -R` had doubled the image to 3.06 GB.
+
+Next: you run the runbook (budget alert, then launch), then the clean-browser test; add the live URL and a demo GIF to
+the README. Then step 2 of the six: calibrated uncertainty.
+
+Still unclear: the first x86 build on the server (my laptop is arm64); whether to add HTTPS with a domain.

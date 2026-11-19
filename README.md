@@ -34,16 +34,25 @@ uv sync
 uv run pytest -q                      # tests never call the live API
 ```
 
-The app needs the processed dataset, which is not in the repository (`data/` is git-ignored; two small
-subsets used by the tests are in `tests/fixtures/`). To build it from the OpenF1 API:
+The three small processed files the app needs (`data/processed/`, about 1 MB, derived from the OpenF1 API) are in
+the repository, so a fresh clone runs the app. The raw API cache (about 46 MB) is not:
+
+```bash
+uv sync && uv run streamlit run app.py
+# or in a container:
+docker build -t pitwall . && docker run -p 8501:8501 pitwall
+```
+
+To rebuild the data from the OpenF1 API:
 
 ```bash
 uv run python scripts/fetch_races.py         # caches raw JSON in data/raw/: 70 races, about 350 requests, 3 s apart (~20 min)
 uv run python scripts/build_dataset.py       # data/processed/lap_dataset.parquet + docs/DATA_QUALITY.md + docs/RACE_SELECTION.md
 uv run python scripts/build_driver_names.py  # data/processed/driver_names.json (optional: car numbers otherwise)
 uv run python scripts/build_neutralisations.py # data/processed/neutralisations.json (safety-car windows; races with one are hidden without it)
-uv run streamlit run app.py
 ```
+
+Deploying to AWS (Docker on EC2): [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 Every API response is cached and the fetch is resumable, so re-running only fetches what is missing.
 `uv run python scripts/evaluate.py` prints the numbers quoted below.
@@ -109,6 +118,9 @@ pit loss (pit-lane time minus the same stretch at racing speed, measured per cir
 - **50 of the 57 are offered in the app.** 5 are hidden because no field lap time exists to replay under their
   safety car (every car pitted together), and 2 (Interlagos 2025, Monte Carlo 2025) because their circuit has
   no race in 2023/24 to learn from.
+- The three processed files in `data/processed/` are derived from OpenF1's public API data (lap times, stints, race
+  control messages, driver names). This is an independent learning project, not affiliated with Formula 1, the FIA or
+  FOM; check OpenF1's terms before reusing the data.
 - Raw data is kept apart from processed data; joins are on `session_key`, `driver_number` and
   `lap_number`, with key-uniqueness and row-count checks.
 
